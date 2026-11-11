@@ -1,0 +1,535 @@
+// Prisma Schema for LMS System with MongoDB
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  PROGRAM_COORDINATOR
+  FACULTY
+  MENTOR
+  STUDENT
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+}
+
+model User {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  email         String     @unique
+  username      String     @unique
+  passwordHash  String
+  role          UserRole
+  status        UserStatus @default(ACTIVE)
+  qualification String?
+  programme     String?
+  department    String?
+  subject       String?
+  mobile        String?
+  studentId     String?
+  semester      String?
+  academicYear  String?
+  address       String?
+  academicInfo  String?
+  mentorId      String?
+  mentorName    String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([role])
+  @@index([role, status])
+  @@index([mentorId])
+  @@map("users")
+}
+
+model Program {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String
+  code         String   @unique
+  department   String?
+  eligibility  String
+  medium       String   @default("English")
+  syllabusId   String?
+  syllabusName String?
+  academicYear String?
+  calendarYear String?
+  status       String   @default("ACTIVE")
+  createdAt    DateTime @default(now())
+
+  @@map("programs")
+}
+
+model Course {
+  id                   String   @id @default(auto()) @map("_id") @db.ObjectId
+  name                 String
+  code                 String   @unique
+  programmeId          String
+  programmeName        String
+  semester             String
+  subject              String
+  facultyId            String
+  facultyName          String
+  assessment           String
+  status               String   @default("ACTIVE")
+  appSubmission        Boolean  @default(true)
+  verificationRequired Boolean  @default(true)
+  admissionApproval    Boolean  @default(true)
+  lmsAccountCreation   Boolean  @default(true)
+  createdAt            DateTime @default(now())
+
+  @@map("courses")
+}
+
+model Application {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  applicantName String
+  email         String
+  mobile        String
+  programme     String
+  status        String   @default("Submitted")
+  appliedDate   String
+  notes         String?
+  createdAt     DateTime @default(now())
+
+  @@map("applications")
+}
+
+model FacultyMapping {
+  id            String @id @default(auto()) @map("_id") @db.ObjectId
+  facultyId     String
+  facultyName   String
+  programmeId   String
+  programmeName String
+  subject       String
+
+  @@map("faculty_mappings")
+}
+
+model StudentMapping {
+  id            String @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String
+  studentName   String
+  programmeId   String
+  programmeName String
+  semester      String
+
+  @@map("student_mappings")
+}
+
+model LearningResource {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  courseId      String
+  courseName    String
+  subject       String
+  fileType      String
+  fileUrl       String
+  notes         String?
+  uploadedAt    String
+  programmeId   String?
+  programmeName String?
+  semesterName  String?
+  paperId       String?
+  paperName     String?
+  unitNumber    Int?     @default(1)
+  unitName      String?  @default("Unit 1")
+
+  @@map("learning_resources")
+}
+
+model ResourceView {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  resourceId   String
+  studentId    String
+  studentName  String
+  studentRegNo String?
+  viewedAt     DateTime @default(now())
+
+  @@unique([resourceId, studentId])
+  @@map("resource_views")
+}
+
+model Assessment {
+  id            String                 @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  description   String
+  programmeId   String?
+  programmeName String?
+  semesterName  String?
+  paperId       String?
+  paperCode     String?
+  courseId      String
+  courseName    String
+  date          String
+  duration      String
+  maxMarks      Int
+  instructions  String
+  questions     String
+  isPublished   Boolean                @default(false)
+  status        String                 @default("Upcoming")
+  submissions   AssessmentSubmission[]
+  createdAt     DateTime               @default(now())
+
+  @@map("assessments")
+}
+
+model AssessmentSubmission {
+  id           String     @id @default(auto()) @map("_id") @db.ObjectId
+  assessmentId String     @db.ObjectId
+  assessment   Assessment @relation(fields: [assessmentId], references: [id], onDelete: Cascade)
+  studentId    String
+  studentName  String
+  score        Int
+  maxMarks     Int
+  percentage   Float
+  answers      String
+  submittedAt  DateTime   @default(now())
+
+  @@map("assessment_submissions")
+}
+
+model Assignment {
+  id            String                 @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  description   String
+  courseId      String
+  courseName    String
+  dueDate       String
+  maxMarks      Int
+  instructions  String
+  attachmentUrl String?
+  submissions   AssignmentSubmission[]
+  createdAt     DateTime               @default(now())
+
+  @@map("assignments")
+}
+
+model AssignmentSubmission {
+  id             String     @id @default(auto()) @map("_id") @db.ObjectId
+  assignmentId   String     @db.ObjectId
+  assignment     Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  studentId      String
+  studentName    String
+  submissionDate String
+  fileUrl        String
+  marks          Int?
+  feedback       String?
+  status         String     @default("Submitted")
+
+  @@map("assignment_submissions")
+}
+
+model InternalMark {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  programmeId   String
+  programmeName String
+  courseId      String
+  courseName    String
+  semester      String
+  studentId     String
+  studentName   String
+  marks         Int
+  maxMarks      Int
+  updatedAt     String
+
+  @@map("internal_marks")
+}
+
+model Schedule {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  courseId    String
+  courseName  String
+  subject     String
+  date        String
+  startTime   String
+  endTime     String
+  room        String
+  facultyId   String
+  facultyName String
+  classType   String
+  meetingLink String?
+  status      String   @default("Upcoming")
+  createdAt   DateTime @default(now())
+
+  @@map("schedules")
+}
+
+model FeeActivity {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  studentId   String
+  feeType     String
+  amount      Float
+  dueDate     String
+  status      String
+  paymentDate String?
+  receiptUrl  String?
+
+  @@map("fee_activities")
+}
+
+model Forum {
+  id         String       @id @default(auto()) @map("_id") @db.ObjectId
+  courseId   String
+  courseName String
+  subject    String
+  title      String
+  authorId   String
+  authorName String
+  authorRole String
+  content    String
+  createdAt  String
+  replies    ForumReply[]
+
+  @@map("forums")
+}
+
+model ForumReply {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  forumId    String   @db.ObjectId
+  forum      Forum    @relation(fields: [forumId], references: [id], onDelete: Cascade)
+  authorId   String
+  authorName String
+  authorRole String
+  content    String
+  createdAt  String
+
+  @@map("forum_replies")
+}
+
+model Circular {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  title         String
+  description   String
+  date          String
+  attachmentUrl String?
+  isImportant   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+
+  @@map("circulars")
+}
+
+model Message {
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  senderId     String
+  senderName   String
+  receiverId   String
+  receiverName String
+  subject      String
+  body         String
+  sentAt       String
+  isRead       Boolean  @default(false)
+
+  @@map("messages")
+}
+
+model Mentoring {
+  id            String  @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String  @unique
+  mentorId      String?
+  mentorName    String
+  mentorContact String
+  mentorEmail   String?
+  programme     String
+  meetingInfo   String
+  historyJson   String
+  notes         String?
+
+  @@index([mentorId])
+  @@map("mentoring")
+}
+
+model Notification {
+  id        String  @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String
+  title     String
+  message   String
+  type      String
+  isRead    Boolean @default(false)
+  createdAt String
+
+  @@map("notifications")
+}
+
+model Certificate {
+  id                String @id @default(auto()) @map("_id") @db.ObjectId
+  studentId         String
+  certificateName   String
+  courseOrProgramme String
+  issueDate         String
+  certificateId     String
+  downloadUrl       String
+
+  @@map("certificates")
+}
+
+model SupportTicket {
+  id            String           @id @default(auto()) @map("_id") @db.ObjectId
+  studentId     String
+  studentName   String
+  subject       String
+  category      String
+  description   String
+  priority      String           @default("Medium")
+  attachmentUrl String?
+  status        String           @default("Open")
+  createdAt     String
+  responses     TicketResponse[]
+
+  @@map("support_tickets")
+}
+
+model TicketResponse {
+  id            String        @id @default(auto()) @map("_id") @db.ObjectId
+  ticketId      String        @db.ObjectId
+  ticket        SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  responderName String
+  responderRole String
+  message       String
+  createdAt     String
+
+  @@map("ticket_responses")
+}
+
+model Syllabus {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  regulation    String
+  programmeId   String
+  programmeName String?
+  year          String?
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+
+  @@map("syllabuses")
+}
+
+model Semester {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  number        Int
+  programmeId   String
+  programmeName String?
+  syllabusId    String?
+  createdAt     DateTime @default(now())
+
+  @@map("semesters")
+}
+
+model Paper {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  code          String   @unique
+  programmeId   String
+  programmeName String?
+  semesterId    String?
+  semesterName  String
+  syllabusId    String?
+  syllabusName  String?
+  credits       Int      @default(4)
+  facultyId     String?
+  facultyName   String?
+  academicYear  String?
+  calendarYear  String?
+  status        String   @default("ACTIVE")
+  createdAt     DateTime @default(now())
+
+  @@map("papers")
+}
+
+model FacultyAssignment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  facultyId     String
+  facultyName   String
+  paperId       String
+  paperName     String
+  paperCode     String?
+  programmeId   String
+  programmeName String?
+  semesterId    String?
+  semesterName  String?
+  academicYear  String?
+  calendarYear  String?
+  assignedAt    DateTime @default(now())
+
+  @@map("faculty_assignments")
+}
+
+model PaperUnit {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  paperId     String
+  unitNumber  Int      // 1, 2, 3, 4, 5
+  title       String   @default("")
+  textContent String?
+  pdfUrl      String?
+  status      String   @default("Not Added")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([paperId, unitNumber])
+  @@map("paper_units")
+}
+
+model StudyCentre {
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  code            String   @unique
+  name            String
+  city            String
+  state           String   @default("Tamil Nadu")
+  coordinatorName String
+  contactEmail    String
+  contactPhone    String
+  address         String?
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+
+  @@map("study_centres")
+}
+
+model AcademicYear {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  year      String   @unique
+  status    String   @default("ACTIVE")
+  isCurrent Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("academic_years")
+}
+
+model AttendanceRecord {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  scheduleId  String?
+  courseId    String
+  courseName  String
+  paperId     String?
+  studentId   String
+  studentName String
+  date        String
+  status      String   @default("Present")
+  remarks     String?
+  recordedBy  String?
+  createdAt   DateTime @default(now())
+
+  @@map("attendance_records")
+}
+
+model AuditLog {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId    String?
+  userName  String?
+  userRole  String?
+  action    String
+  resource  String
+  details   String?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@map("audit_logs")
+}
