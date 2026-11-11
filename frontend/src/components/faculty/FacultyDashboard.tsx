@@ -107,6 +107,13 @@ import {
 import { logoutAction } from '@/app/actions/authActions';
 import { Toast } from '../ui/Toast';
 
+function formatVideoTime(seconds?: number): string {
+  if (!seconds || isNaN(seconds) || seconds <= 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
 interface FacultyDashboardProps {
   user?: UserSessionPayload;
 }
@@ -5470,32 +5477,63 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
                       <th className="py-2.5 px-3">#</th>
                       <th className="py-2.5 px-3">Student Name</th>
                       <th className="py-2.5 px-3">Reg No / ID</th>
+                      <th className="py-2.5 px-3">Watch Progress</th>
                       <th className="py-2.5 px-3">Viewed Timestamp</th>
                       <th className="py-2.5 px-3 text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                    {viewersModal.viewers.map((viewer, idx) => (
-                      <tr key={viewer.id || idx} className="hover:bg-slate-50 transition-colors">
-                        <td className="py-2.5 px-3 text-slate-400 font-bold">{idx + 1}</td>
-                        <td className="py-2.5 px-3">
-                          <div className="font-bold text-slate-900">{viewer.studentName}</div>
-                        </td>
-                        <td className="py-2.5 px-3">
-                          <span className="font-mono text-[11px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-700">
-                            {viewer.studentRegNo || viewer.studentId}
-                          </span>
-                        </td>
-                        <td className="py-2.5 px-3 text-slate-500 text-[11px]">
-                          {viewer.viewedAt ? new Date(viewer.viewedAt).toLocaleString() : 'Recently'}
-                        </td>
-                        <td className="py-2.5 px-3 text-right">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            ✓ Completed
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {viewersModal.viewers.map((viewer, idx) => {
+                      const pct = Math.min(100, Math.max(0, Math.round(viewer.percentage || 0)));
+                      const isComp = viewer.isCompleted || pct >= 90;
+                      return (
+                        <tr key={viewer.id || idx} className="hover:bg-slate-50 transition-colors">
+                          <td className="py-2.5 px-3 text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="py-2.5 px-3">
+                            <div className="font-bold text-slate-900">{viewer.studentName}</div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 bg-slate-100 rounded text-slate-700">
+                              {viewer.studentRegNo || viewer.studentId}
+                            </span>
+                          </td>
+                          <td className="py-2.5 px-3 min-w-[130px]">
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-slate-700">{pct}%</span>
+                                {viewer.lastPosition && viewer.lastPosition > 0 ? (
+                                  <span className="text-[10px] font-mono text-indigo-600 font-semibold">at {formatVideoTime(viewer.lastPosition)}</span>
+                                ) : null}
+                              </div>
+                              <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full ${isComp ? 'bg-emerald-500' : pct > 0 ? 'bg-indigo-600' : 'bg-transparent'}`}
+                                  style={{ width: `${pct}%` }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 text-slate-500 text-[11px]">
+                            {viewer.viewedAt ? new Date(viewer.viewedAt).toLocaleString() : 'Recently'}
+                          </td>
+                          <td className="py-2.5 px-3 text-right">
+                            {isComp ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                ✓ Completed (100%)
+                              </span>
+                            ) : pct > 0 ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                ⏱ In Progress ({pct}%)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-100 text-sky-800 border border-sky-200">
+                                👁 Viewed
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               )}

@@ -17,6 +17,8 @@ import {
   saveLearningResource,
   deleteLearningResource,
   recordResourceView,
+  updateResourceVideoProgress,
+  getStudentResourceViews,
   getResourceViews,
   getAssessments,
   getAssessmentById,
@@ -224,8 +226,8 @@ export async function saveStudentMappingAction(data: { studentId: string; studen
 
 // LEARNING RESOURCES ACTIONS
 export async function fetchLearningResourcesAction() {
-  await getAuthenticatedUser();
-  const allResources = await getLearningResources();
+  const session = await getAuthenticatedUser();
+  const allResources = await getLearningResources(session.role === 'STUDENT' ? session.id : undefined);
   return allResources;
 }
 
@@ -255,7 +257,7 @@ export async function deleteLearningResourceAction(id: string) {
   return { success: true };
 }
 
-export async function recordResourceViewAction(resourceId: string) {
+export async function recordResourceViewAction(resourceId: string, extra?: { lastPosition?: number; duration?: number; percentage?: number; isCompleted?: boolean }) {
   const session = await getAuthenticatedUser();
   const studentRegNo = session.studentId || (session as any).username || session.id;
   const view = await recordResourceView({
@@ -263,8 +265,39 @@ export async function recordResourceViewAction(resourceId: string) {
     studentId: session.id,
     studentName: session.name || 'Student',
     studentRegNo,
+    lastPosition: extra?.lastPosition,
+    duration: extra?.duration,
+    percentage: extra?.percentage,
+    isCompleted: extra?.isCompleted,
   });
   return { success: true, view };
+}
+
+export async function updateVideoProgressAction(data: {
+  resourceId: string;
+  lastPosition: number;
+  duration: number;
+  percentage: number;
+  isCompleted?: boolean;
+}) {
+  const session = await getAuthenticatedUser();
+  const studentRegNo = session.studentId || (session as any).username || session.id;
+  const view = await updateResourceVideoProgress({
+    resourceId: data.resourceId,
+    studentId: session.id,
+    studentName: session.name || 'Student',
+    studentRegNo,
+    lastPosition: data.lastPosition,
+    duration: data.duration,
+    percentage: data.percentage,
+    isCompleted: data.isCompleted,
+  });
+  return { success: true, view };
+}
+
+export async function fetchStudentVideoProgressAction(): Promise<ResourceViewItem[]> {
+  const session = await getAuthenticatedUser();
+  return await getStudentResourceViews(session.id);
 }
 
 export async function fetchResourceViewsAction(resourceId: string): Promise<ResourceViewItem[]> {

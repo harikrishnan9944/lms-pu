@@ -151,6 +151,10 @@ export interface LearningResourceItem {
   unitNumber?: number;
   unitName?: string;
   viewCount?: number;
+  lastPosition?: number;
+  duration?: number;
+  percentage?: number;
+  isCompleted?: boolean;
 }
 
 export interface ResourceViewItem {
@@ -159,6 +163,10 @@ export interface ResourceViewItem {
   studentId: string;
   studentName: string;
   studentRegNo?: string;
+  lastPosition?: number;
+  duration?: number;
+  percentage?: number;
+  isCompleted?: boolean;
   viewedAt: string;
 }
 
@@ -1890,40 +1898,51 @@ export async function saveStudentMapping(mapData: Omit<StudentMapping, 'id'>): P
 }
 
 // ================= LEARNING RESOURCES =================
-export async function getLearningResources(): Promise<LearningResourceItem[]> {
+export async function getLearningResources(studentId?: string): Promise<LearningResourceItem[]> {
   await ensureDefaultDataSeeded();
   const list = await prisma.learningResource.findMany({ orderBy: { uploadedAt: 'desc' } });
 
-  // Count views for each resource
+  // Count views for each resource & student-specific watch progress
   let viewCountMap = new Map<string, number>();
+  let studentViewsMap = new Map<string, any>();
   try {
     const views = await prisma.resourceView.findMany();
     views.forEach((v) => {
       viewCountMap.set(v.resourceId, (viewCountMap.get(v.resourceId) || 0) + 1);
+      if (studentId && v.studentId === studentId) {
+        studentViewsMap.set(v.resourceId, v);
+      }
     });
   } catch {
     // If table not queried yet
   }
 
-  return list.map((r) => ({
-    id: r.id,
-    title: r.title,
-    courseId: r.courseId,
-    courseName: r.courseName,
-    subject: r.subject,
-    fileType: r.fileType as LearningResourceItem['fileType'],
-    fileUrl: r.fileUrl,
-    notes: r.notes || undefined,
-    uploadedAt: r.uploadedAt,
-    programmeId: r.programmeId || undefined,
-    programmeName: r.programmeName || undefined,
-    semesterName: r.semesterName || undefined,
-    paperId: r.paperId || undefined,
-    paperName: r.paperName || undefined,
-    unitNumber: r.unitNumber || 1,
-    unitName: r.unitName || (r.unitNumber ? `Unit ${r.unitNumber}` : 'Unit 1'),
-    viewCount: viewCountMap.get(r.id) || 0,
-  }));
+  return list.map((r) => {
+    const sView = studentViewsMap.get(r.id);
+    return {
+      id: r.id,
+      title: r.title,
+      courseId: r.courseId,
+      courseName: r.courseName,
+      subject: r.subject,
+      fileType: r.fileType as LearningResourceItem['fileType'],
+      fileUrl: r.fileUrl,
+      notes: r.notes || undefined,
+      uploadedAt: r.uploadedAt,
+      programmeId: r.programmeId || undefined,
+      programmeName: r.programmeName || undefined,
+      semesterName: r.semesterName || undefined,
+      paperId: r.paperId || undefined,
+      paperName: r.paperName || undefined,
+      unitNumber: r.unitNumber || 1,
+      unitName: r.unitName || (r.unitNumber ? `Unit ${r.unitNumber}` : 'Unit 1'),
+      viewCount: viewCountMap.get(r.id) || 0,
+      lastPosition: sView ? (sView.lastPosition ?? 0) : 0,
+      duration: sView ? (sView.duration ?? 0) : 0,
+      percentage: sView ? (sView.percentage ?? 0) : 0,
+      isCompleted: sView ? (sView.isCompleted ?? false) : false,
+    };
+  });
 }
 
 export async function saveLearningResource(res: Omit<LearningResourceItem, 'id' | 'uploadedAt'> & { id?: string }): Promise<LearningResourceItem> {
@@ -2013,6 +2032,10 @@ export async function recordResourceView(data: {
   studentId: string;
   studentName: string;
   studentRegNo?: string;
+  lastPosition?: number;
+  duration?: number;
+  percentage?: number;
+  isCompleted?: boolean;
 }): Promise<ResourceViewItem> {
   await ensureDefaultDataSeeded();
   const existing = await prisma.resourceView.findFirst({
@@ -2023,11 +2046,17 @@ export async function recordResourceView(data: {
   });
 
   if (existing) {
+    const isComp = data.isCompleted !== undefined ? data.isCompleted : existing.isCompleted;
+    const maxPct = data.percentage !== undefined ? Math.max(existing.percentage || 0, data.percentage) : existing.percentage;
     const updated = await prisma.resourceView.update({
       where: { id: existing.id },
       data: {
         studentName: data.studentName,
         studentRegNo: data.studentRegNo || existing.studentRegNo,
+        lastPosition: data.lastPosition !== undefined ? data.lastPosition : existing.lastPosition,
+        duration: data.duration !== undefined ? data.duration : existing.duration,
+        percentage: maxPct,
+        isCompleted: isComp || (maxPct !== null && maxPct !== undefined && maxPct >= 90),
         viewedAt: new Date(),
       },
     });
@@ -2037,16 +2066,25 @@ export async function recordResourceView(data: {
       studentId: updated.studentId,
       studentName: updated.studentName,
       studentRegNo: updated.studentRegNo || undefined,
+      lastPosition: updated.lastPosition ?? 0,
+      duration: updated.duration ?? 0,
+      percentage: updated.percentage ?? 0,
+      isCompleted: updated.isCompleted ?? false,
       viewedAt: updated.viewedAt.toISOString(),
     };
   }
 
+  const isComp = data.isCompleted || (data.percentage !== undefined && data.percentage >= 90);
   const created = await prisma.resourceView.create({
     data: {
       resourceId: data.resourceId,
       studentId: data.studentId,
       studentName: data.studentName,
       studentRegNo: data.studentRegNo || null,
+      lastPosition: data.lastPosition ?? 0,
+      duration: data.duration ?? 0,
+      percentage: data.percentage ?? 0,
+      isCompleted: isComp ?? false,
       viewedAt: new Date(),
     },
   });
@@ -2057,8 +2095,54 @@ export async function recordResourceView(data: {
     studentId: created.studentId,
     studentName: created.studentName,
     studentRegNo: created.studentRegNo || undefined,
+    lastPosition: created.lastPosition ?? 0,
+    duration: created.duration ?? 0,
+    percentage: created.percentage ?? 0,
+    isCompleted: created.isCompleted ?? false,
     viewedAt: created.viewedAt.toISOString(),
   };
+}
+
+export async function updateResourceVideoProgress(data: {
+  resourceId: string;
+  studentId: string;
+  studentName?: string;
+  studentRegNo?: string;
+  lastPosition: number;
+  duration: number;
+  percentage: number;
+  isCompleted?: boolean;
+}): Promise<ResourceViewItem> {
+  return await recordResourceView({
+    resourceId: data.resourceId,
+    studentId: data.studentId,
+    studentName: data.studentName || 'Student',
+    studentRegNo: data.studentRegNo,
+    lastPosition: data.lastPosition,
+    duration: data.duration,
+    percentage: data.percentage,
+    isCompleted: data.isCompleted || data.percentage >= 90,
+  });
+}
+
+export async function getStudentResourceViews(studentId: string): Promise<ResourceViewItem[]> {
+  await ensureDefaultDataSeeded();
+  const list = await prisma.resourceView.findMany({
+    where: { studentId },
+    orderBy: { viewedAt: 'desc' },
+  });
+  return list.map((v) => ({
+    id: v.id,
+    resourceId: v.resourceId,
+    studentId: v.studentId,
+    studentName: v.studentName,
+    studentRegNo: v.studentRegNo || undefined,
+    lastPosition: v.lastPosition ?? 0,
+    duration: v.duration ?? 0,
+    percentage: v.percentage ?? 0,
+    isCompleted: v.isCompleted ?? false,
+    viewedAt: v.viewedAt.toISOString(),
+  }));
 }
 
 export async function getResourceViews(resourceId: string): Promise<ResourceViewItem[]> {
@@ -2073,6 +2157,10 @@ export async function getResourceViews(resourceId: string): Promise<ResourceView
     studentId: v.studentId,
     studentName: v.studentName,
     studentRegNo: v.studentRegNo || undefined,
+    lastPosition: v.lastPosition ?? 0,
+    duration: v.duration ?? 0,
+    percentage: v.percentage ?? 0,
+    isCompleted: v.isCompleted ?? false,
     viewedAt: v.viewedAt.toISOString(),
   }));
 }

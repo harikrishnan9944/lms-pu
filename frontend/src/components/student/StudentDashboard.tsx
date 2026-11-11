@@ -8,6 +8,8 @@ import {
   fetchCoursesAction,
   fetchLearningResourcesAction,
   recordResourceViewAction,
+  updateVideoProgressAction,
+  fetchStudentVideoProgressAction,
   fetchAssessmentsAction,
   fetchAssignmentsAction,
   submitAssignmentAction,
@@ -91,6 +93,8 @@ import {
   Mail,
   Phone,
   UploadCloud,
+  Play,
+  RotateCcw,
 } from 'lucide-react';
 import { logoutAction } from '@/app/actions/authActions';
 import { Toast } from '../ui/Toast';
@@ -112,6 +116,13 @@ export interface StudentDashboardProps {
     academicInfo?: string;
     imageUrl?: string;
   };
+}
+
+function formatVideoTime(seconds?: number): string {
+  if (!seconds || isNaN(seconds) || seconds <= 0) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
 export function StudentDashboard({ user }: StudentDashboardProps) {
@@ -326,7 +337,30 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
   // Resource Filter & Video Modal State
   const [resourceFileTypeFilter, setResourceFileTypeFilter] = useState<'ALL' | 'Video Link' | 'PDF' | 'Notes'>('ALL');
   const [resourceUnitFilter, setResourceUnitFilter] = useState<'ALL' | '1' | '2' | '3' | '4' | '5'>('ALL');
-  const [videoPlayerModal, setVideoPlayerModal] = useState<{ open: boolean; title: string; url: string; notes?: string; paperName?: string; semesterName?: string } | null>(null);
+  
+  // Video Watch Progress Tracking State (Requirement: Watch Percentage & Resume from where left off)
+  const [videoProgressMap, setVideoProgressMap] = useState<
+    Record<string, { lastPosition: number; duration: number; percentage: number; isCompleted: boolean }>
+  >({});
+  const [videoPlayerModal, setVideoPlayerModal] = useState<{
+    open: boolean;
+    resourceId: string;
+    title: string;
+    url: string;
+    notes?: string;
+    paperName?: string;
+    semesterName?: string;
+    lastPosition: number;
+    duration: number;
+    percentage: number;
+    isCompleted: boolean;
+  } | null>(null);
+  const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [videoPercentage, setVideoPercentage] = useState(0);
+  const [videoIsCompleted, setVideoIsCompleted] = useState(false);
+  const videoElementRef = React.useRef<HTMLVideoElement | null>(null);
+  const lastSyncTimeRef = React.useRef<number>(0);
 
   // Active Selected Semester Filter for Student Portal
   const currentSem = user.semester || 'Semester 1';
@@ -414,6 +448,43 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
       ]);
       setCourses(crs);
       setResources(res);
+
+      // Initialize Video Watch Progress Map from Database and LocalStorage
+      const initialMap: Record<string, { lastPosition: number; duration: number; percentage: number; isCompleted: boolean }> = {};
+      res.forEach((r) => {
+        let localPos = 0;
+        let localDur = 0;
+        let localPct = 0;
+        let localComp = false;
+        try {
+          const raw = localStorage.getItem(`lms_video_pos_${user.id}_${r.id}`);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            localPos = Number(parsed.lastPosition) || 0;
+            localDur = Number(parsed.duration) || 0;
+            localPct = Number(parsed.percentage) || 0;
+            localComp = !!parsed.isCompleted;
+          }
+        } catch {}
+
+        const sPos = Number(r.lastPosition) || 0;
+        const sDur = Number(r.duration) || 0;
+        const sPct = Number(r.percentage) || 0;
+        const sComp = !!r.isCompleted;
+
+        const bestPct = Math.min(100, Math.max(sPct, localPct));
+        const bestPos = localPos > 0 ? localPos : sPos;
+        const bestDur = localDur > 0 ? localDur : sDur;
+        const bestComp = sComp || localComp || bestPct >= 90;
+
+        initialMap[r.id] = {
+          lastPosition: bestPos,
+          duration: bestDur,
+          percentage: bestPct,
+          isCompleted: bestComp,
+        };
+      });
+      setVideoProgressMap(initialMap);
       setAssessments(ass);
       setAssignments(asg);
       setSchedules(sch);
@@ -438,6 +509,197 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
   useEffect(() => {
     loadData();
   }, []);
+
+  // Video Watch Tracking Handlers
+  const handleOpenVideoModal = (res: LearningResourceItem) => {
+    recordResourceViewAction(res.id).catch(console.error);
+
+    const saved = videoProgressMap[res.id] || {
+      lastPosition: res.lastPosition || 0,
+      duration: res.duration || 600,
+      percentage: res.percentage || 0,
+      isCompleted: res.isCompleted || false,
+    };
+
+    setVideoCurrentTime(saved.lastPosition || 0);
+    setVideoDuration(saved.duration || 600);
+    setVideoPercentage(saved.percentage || 0);
+    setVideoIsCompleted(saved.isCompleted || saved.percentage >= 90);
+
+    setVideoPlayerModal({
+      open: true,
+      resourceId: res.id,
+      title: res.title,
+      url: res.fileUrl,
+      notes: res.notes,
+      paperName: res.paperName || res.subject || res.courseName,
+      semesterName: res.semesterName || selectedSemester,
+      lastPosition: saved.lastPosition || 0,
+      duration: saved.duration || 600,
+      percentage: saved.percentage || 0,
+      isCompleted: saved.isCompleted || false,
+    });
+  };
+
+  const handleCloseVideoModal = () => {
+    if (videoPlayerModal) {
+      updateVideoProgressAction({
+        resourceId: videoPlayerModal.resourceId,
+        lastPosition: videoCurrentTime,
+        duration: videoDuration,
+        percentage: videoPercentage,
+        isCompleted: videoIsCompleted || videoPercentage >= 90,
+      }).catch(console.error);
+    }
+    setVideoPlayerModal(null);
+  };
+
+  const handleVideoProgressUpdate = (resourceId: string, current: number, dur: number) => {
+    if (!dur || dur <= 0) return;
+    const pct = Math.min(100, Math.round((current / dur) * 100));
+    const isComp = pct >= 90;
+
+    setVideoCurrentTime(current);
+    setVideoDuration(dur);
+    setVideoPercentage((prev) => Math.max(prev, pct));
+    if (isComp) setVideoIsCompleted(true);
+
+    setVideoProgressMap((prev) => {
+      const existing = prev[resourceId] || { lastPosition: 0, duration: 0, percentage: 0, isCompleted: false };
+      const maxPct = Math.max(existing.percentage, pct);
+      return {
+        ...prev,
+        [resourceId]: {
+          lastPosition: current,
+          duration: dur,
+          percentage: maxPct,
+          isCompleted: existing.isCompleted || isComp,
+        },
+      };
+    });
+
+    try {
+      localStorage.setItem(
+        `lms_video_pos_${user.id}_${resourceId}`,
+        JSON.stringify({
+          lastPosition: current,
+          duration: dur,
+          percentage: pct,
+          isCompleted: isComp,
+          updatedAt: Date.now(),
+        })
+      );
+    } catch {}
+
+    const now = Date.now();
+    if (now - lastSyncTimeRef.current > 3500 || isComp) {
+      lastSyncTimeRef.current = now;
+      updateVideoProgressAction({
+        resourceId,
+        lastPosition: current,
+        duration: dur,
+        percentage: pct,
+        isCompleted: isComp,
+      }).catch(console.error);
+    }
+  };
+
+  const handleRestartVideo = (resourceId: string) => {
+    if (videoElementRef.current) {
+      videoElementRef.current.currentTime = 0;
+      videoElementRef.current.play().catch(() => {});
+    }
+    setVideoCurrentTime(0);
+    setVideoPercentage(0);
+    setVideoIsCompleted(false);
+    setVideoPlayerModal((prev) => prev ? { ...prev, lastPosition: 0, percentage: 0, isCompleted: false } : null);
+    setVideoProgressMap((prev) => ({
+      ...prev,
+      [resourceId]: {
+        ...(prev[resourceId] || { duration: 0, percentage: 0, isCompleted: false }),
+        lastPosition: 0,
+      },
+    }));
+    try {
+      const raw = localStorage.getItem(`lms_video_pos_${user.id}_${resourceId}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        parsed.lastPosition = 0;
+        localStorage.setItem(`lms_video_pos_${user.id}_${resourceId}`, JSON.stringify(parsed));
+      }
+    } catch {}
+    updateVideoProgressAction({
+      resourceId,
+      lastPosition: 0,
+      duration: videoDuration || 600,
+      percentage: 0,
+      isCompleted: false,
+    }).catch(console.error);
+    setToast({ message: 'Video restarted from beginning (0:00).', type: 'success' });
+  };
+
+  // Live watch tracker for iframe & YouTube video lectures
+  useEffect(() => {
+    if (!videoPlayerModal || !videoPlayerModal.open) return;
+    const url = videoPlayerModal.url || '';
+    const isHtml5 = url.startsWith('blob:') || !!url.match(/\.(mp4|webm|ogg)($|\?)/i);
+
+    if (!isHtml5) {
+      const timer = setInterval(() => {
+        setVideoCurrentTime((prev) => {
+          const next = prev + 1;
+          const dur = videoDuration || 600;
+          const pct = Math.min(100, Math.round((next / dur) * 100));
+          const isComp = pct >= 90;
+
+          setVideoPercentage((p) => Math.max(p, pct));
+          if (isComp) setVideoIsCompleted(true);
+
+          setVideoProgressMap((currentMap) => {
+            const existing = currentMap[videoPlayerModal.resourceId] || { lastPosition: 0, duration: 0, percentage: 0, isCompleted: false };
+            return {
+              ...currentMap,
+              [videoPlayerModal.resourceId]: {
+                lastPosition: next,
+                duration: dur,
+                percentage: Math.max(existing.percentage, pct),
+                isCompleted: existing.isCompleted || isComp,
+              },
+            };
+          });
+
+          try {
+            localStorage.setItem(
+              `lms_video_pos_${user.id}_${videoPlayerModal.resourceId}`,
+              JSON.stringify({
+                lastPosition: next,
+                duration: dur,
+                percentage: pct,
+                isCompleted: isComp,
+                updatedAt: Date.now(),
+              })
+            );
+          } catch {}
+
+          const now = Date.now();
+          if (now - lastSyncTimeRef.current > 4000 || isComp) {
+            lastSyncTimeRef.current = now;
+            updateVideoProgressAction({
+              resourceId: videoPlayerModal.resourceId,
+              lastPosition: next,
+              duration: dur,
+              percentage: pct,
+              isCompleted: isComp,
+            }).catch(console.error);
+          }
+
+          return next;
+        });
+      }, 1000);
+
+      return () => clearInterval(timer);
+    }
+  }, [videoPlayerModal?.open, videoPlayerModal?.resourceId, videoDuration]);
 
   const handleStudentFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -1098,6 +1360,60 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                     {/* Title */}
                     <h4 className="font-extrabold text-slate-900 text-base leading-snug">{res.title}</h4>
 
+                    {/* Video Watch Progress Tracker (Requirement: Percentage & Resume from where left off) */}
+                    {res.fileType === 'Video Link' && (() => {
+                      const prog = videoProgressMap[res.id] || {
+                        lastPosition: res.lastPosition || 0,
+                        duration: res.duration || 0,
+                        percentage: res.percentage || 0,
+                        isCompleted: res.isCompleted || false,
+                      };
+                      const pct = Math.min(100, Math.max(0, Math.round(prog.percentage)));
+                      const isComp = prog.isCompleted || pct >= 90;
+
+                      return (
+                        <div className="p-3 bg-slate-50/90 rounded-xl border border-slate-200/90 space-y-1.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="font-bold">
+                              {isComp ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Completed (100%)
+                                </span>
+                              ) : pct > 0 ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-900 border border-amber-200">
+                                  <Clock className="w-3 h-3 text-amber-600" /> {pct}% Watched
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200/80 text-slate-600">
+                                  Not Started (0%)
+                                </span>
+                              )}
+                            </span>
+
+                            {prog.lastPosition > 0 && !isComp && (
+                              <span className="text-[11px] font-mono text-indigo-600 font-bold">
+                                Left at {formatVideoTime(prog.lastPosition)}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Visual Progress Bar */}
+                          <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                isComp
+                                  ? 'bg-emerald-500'
+                                  : pct > 0
+                                  ? 'bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-600'
+                                  : 'bg-transparent'
+                              }`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })()}
+
                     {/* Program, Semester, Paper details */}
                     <div className="space-y-1.5 pt-1">
                       <div className="flex flex-wrap gap-1.5">
@@ -1128,35 +1444,61 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
 
                   {/* Action Button */}
                   <div className="pt-3 border-t">
-                    {res.fileType === 'Video Link' ? (
+                    {res.fileType === 'Video Link' ? (() => {
+                      const prog = videoProgressMap[res.id] || {
+                        lastPosition: res.lastPosition || 0,
+                        duration: res.duration || 0,
+                        percentage: res.percentage || 0,
+                        isCompleted: res.isCompleted || false,
+                      };
+                      const isComp = prog.isCompleted || prog.percentage >= 90;
+                      const canResume = prog.lastPosition > 5 && !isComp;
+
+                      return (
+                        <button
+                          onClick={() => handleOpenVideoModal(res)}
+                          className={`w-full py-2.5 font-bold rounded-xl text-xs shadow transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                            isComp
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                              : canResume
+                              ? 'bg-gradient-to-r from-indigo-600 via-purple-600 to-rose-600 hover:opacity-95 text-white'
+                              : 'bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white'
+                          }`}
+                        >
+                          {isComp ? (
+                            <>
+                              <RotateCcw className="w-4 h-4" />
+                              <span>🔁 Re-watch Video (Completed)</span>
+                            </>
+                          ) : canResume ? (
+                            <>
+                              <Play className="w-4 h-4" />
+                              <span>▶ Resume from {formatVideoTime(prog.lastPosition)} ({prog.percentage}%)</span>
+                            </>
+                          ) : (
+                            <>
+                              <Video className="w-4 h-4" />
+                              <span>▶ Watch Video Lecture</span>
+                            </>
+                          )}
+                        </button>
+                      );
+                    })() : (
                       <button
                         onClick={() => {
                           recordResourceViewAction(res.id).catch(console.error);
                           setVideoPlayerModal({
                             open: true,
+                            resourceId: res.id,
                             title: res.title,
                             url: res.fileUrl,
                             notes: res.notes,
                             paperName: res.paperName || res.subject || res.courseName,
                             semesterName: res.semesterName || selectedSemester,
-                          });
-                        }}
-                        className="w-full py-2.5 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-700 hover:to-rose-800 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
-                      >
-                        <Video className="w-4 h-4" />
-                        <span>▶ Watch Video Lecture</span>
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          recordResourceViewAction(res.id).catch(console.error);
-                          setVideoPlayerModal({
-                            open: true,
-                            title: res.title,
-                            url: res.fileUrl,
-                            notes: res.notes,
-                            paperName: res.paperName || res.subject || res.courseName,
-                            semesterName: res.semesterName || selectedSemester,
+                            lastPosition: 0,
+                            duration: 0,
+                            percentage: 0,
+                            isCompleted: false,
                           });
                         }}
                         className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs shadow transition-all flex items-center justify-center gap-2 cursor-pointer"
@@ -2093,7 +2435,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
         <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl relative max-h-[95vh] overflow-y-auto border border-slate-200">
             <button
-              onClick={() => setVideoPlayerModal(null)}
+              onClick={handleCloseVideoModal}
               className="absolute top-4 right-4 p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-full transition-colors"
             >
               <X className="w-5 h-5" />
@@ -2118,6 +2460,29 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               )}
             </div>
 
+            {/* Resume Notice Banner (Requirement: Resume from where left off) */}
+            {videoPlayerModal.lastPosition > 0 && !videoIsCompleted && videoPercentage < 90 && (
+              <div className="p-3 bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-2xl border border-indigo-200 flex items-center justify-between text-xs shadow-sm">
+                <div className="flex items-center gap-2 text-indigo-900 font-bold">
+                  <Clock className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>
+                    Resumed from{' '}
+                    <span className="font-mono text-indigo-700 bg-white px-2 py-0.5 rounded border border-indigo-200 font-bold">
+                      {formatVideoTime(videoPlayerModal.lastPosition)}
+                    </span>
+                    {' • '}{videoPercentage}% watched
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleRestartVideo(videoPlayerModal.resourceId)}
+                  className="px-3 py-1 bg-white hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 flex items-center gap-1 transition-all text-xs cursor-pointer shadow-sm"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Start from 0:00
+                </button>
+              </div>
+            )}
+
             {/* Video Player Box */}
             <div className="relative w-full aspect-video rounded-2xl bg-black overflow-hidden shadow-inner flex items-center justify-center">
               {(() => {
@@ -2125,7 +2490,8 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                 let embedUrl = null;
                 const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
                 if (ytMatch && ytMatch[1]) {
-                  embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
+                  const startParam = videoPlayerModal.lastPosition > 0 ? `&start=${Math.floor(videoPlayerModal.lastPosition)}` : '';
+                  embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&enablejsapi=1${startParam}`;
                 }
 
                 if (embedUrl) {
@@ -2140,7 +2506,29 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                   );
                 } else if (url.startsWith('blob:') || url.match(/\.(mp4|webm|ogg)($|\?)/i)) {
                   return (
-                    <video controls autoPlay className="w-full h-full object-contain">
+                    <video
+                      ref={videoElementRef}
+                      controls
+                      autoPlay
+                      playsInline
+                      onLoadedMetadata={(e) => {
+                        const dur = e.currentTarget.duration || 0;
+                        setVideoDuration(dur);
+                        if (videoPlayerModal.lastPosition > 0 && videoPlayerModal.lastPosition < dur - 2) {
+                          e.currentTarget.currentTime = videoPlayerModal.lastPosition;
+                        }
+                      }}
+                      onTimeUpdate={(e) => {
+                        const cur = e.currentTarget.currentTime || 0;
+                        const dur = e.currentTarget.duration || videoDuration || 0;
+                        handleVideoProgressUpdate(videoPlayerModal.resourceId, cur, dur);
+                      }}
+                      onEnded={() => {
+                        handleVideoProgressUpdate(videoPlayerModal.resourceId, videoDuration, videoDuration);
+                        setToast({ message: 'Lecture video completed! 100% progress recorded.', type: 'success' });
+                      }}
+                      className="w-full h-full object-contain"
+                    >
                       <source src={url} />
                       Your browser does not support html5 video playback.
                     </video>
@@ -2157,6 +2545,69 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               })()}
             </div>
 
+            {/* Live Progress Bar & Watch Tracker (Requirement: Watch Percentage) */}
+            <div className="p-3.5 bg-slate-900 text-white rounded-2xl space-y-2.5 text-xs shadow">
+              <div className="flex items-center justify-between font-semibold text-slate-300">
+                <span className="flex items-center gap-1.5 font-bold text-white text-sm">
+                  {videoIsCompleted || videoPercentage >= 90 ? (
+                    <span className="text-emerald-400 flex items-center gap-1.5 font-extrabold">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Completed (100%)
+                    </span>
+                  ) : videoPercentage > 0 ? (
+                    <span className="text-amber-400 flex items-center gap-1.5 font-bold">
+                      <Clock className="w-4 h-4 text-amber-400" /> {videoPercentage}% Watched
+                    </span>
+                  ) : (
+                    <span className="text-slate-400 flex items-center gap-1.5 font-medium">
+                      <Play className="w-4 h-4 text-slate-400" /> Starting Lecture...
+                    </span>
+                  )}
+                </span>
+                <span className="font-mono text-slate-400 text-xs">
+                  {formatVideoTime(videoCurrentTime)} / {formatVideoTime(videoDuration)}
+                </span>
+              </div>
+
+              {/* Progress Line */}
+              <div className="w-full bg-slate-800 rounded-full h-3 overflow-hidden p-0.5 border border-slate-700">
+                <div
+                  className={`h-full rounded-full transition-all duration-300 ${
+                    videoIsCompleted || videoPercentage >= 90
+                      ? 'bg-emerald-500'
+                      : 'bg-gradient-to-r from-amber-500 via-rose-500 to-indigo-500'
+                  }`}
+                  style={{ width: `${Math.min(100, Math.max(0, videoPercentage))}%` }}
+                />
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-400">
+                <span>Continuously auto-saves your progress and last timestamp</span>
+                <div className="flex items-center gap-2">
+                  {!videoIsCompleted && videoPercentage < 90 ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const dur = videoDuration || 600;
+                        handleVideoProgressUpdate(videoPlayerModal.resourceId, dur, dur);
+                        setToast({ message: 'Marked as completed! 100% saved.', type: 'success' });
+                      }}
+                      className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <Check className="w-3.5 h-3.5" /> Mark Completed (100%)
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleRestartVideo(videoPlayerModal.resourceId)}
+                      className="px-3 py-1 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Watch from 0:00
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             {/* Notes & Description */}
             {videoPlayerModal.notes && (
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-700 space-y-1">
@@ -2167,8 +2618,8 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
 
             <div className="pt-2 border-t flex justify-end items-center text-xs">
               <button
-                onClick={() => setVideoPlayerModal(null)}
-                className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors shadow"
+                onClick={handleCloseVideoModal}
+                className="px-6 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition-colors shadow cursor-pointer"
               >
                 Close Video Player
               </button>
