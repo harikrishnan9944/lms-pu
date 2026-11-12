@@ -99,6 +99,7 @@ import {
 import { logoutAction } from '@/app/actions/authActions';
 import { Toast } from '../ui/Toast';
 import { StudentIDCard } from './StudentIDCard';
+import { IgnouAssignmentPortal } from './IgnouAssignmentPortal';
 
 export interface StudentDashboardProps {
   user: {
@@ -140,6 +141,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     | 'attendance'
     | 'forums'
     | 'assignments'
+    | 'ignou-assignments'
     | 'assessments'
     | 'circulars'
     | 'messages'
@@ -162,6 +164,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
       'attendance',
       'forums',
       'assignments',
+      'ignou-assignments',
       'assessments',
       'circulars',
       'messages',
@@ -1674,6 +1677,30 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             </span>
           </div>
 
+          {/* Prominent IGNOU TEE Dec 2026 Portal Link Banner */}
+          <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 shadow-md border border-blue-800">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-950">
+                  IGNOU OAMS
+                </span>
+                <span className="text-xs font-bold text-blue-200">TEE Session: December 2026</span>
+              </div>
+              <h3 className="text-base font-black text-white">
+                IGNOU Assignment Management & Single PDF Preparation System
+              </h3>
+              <p className="text-xs text-blue-200/90">
+                Generate the 9-point Cover Page, combine ID Card & Question Paper with handwritten responses into one single PDF (&le; 20MB), and submit to OAMS.
+              </p>
+            </div>
+            <button
+              onClick={() => setActiveTab('ignou-assignments')}
+              className="px-4 py-2.5 bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs rounded-xl shrink-0 shadow transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <span>Open IGNOU Assignment Portal →</span>
+            </button>
+          </div>
+
           <div className="space-y-4">
             {filteredAssignments.length === 0 ? (
               <div className="p-8 text-center text-slate-400 font-medium bg-slate-50 rounded-2xl border border-dashed">
@@ -1985,6 +2012,11 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             )}
           </div>
         </div>
+      )}
+
+      {/* IGNOU TEE DECEMBER 2026 ASSIGNMENT & PDF PREPARATION PORTAL */}
+      {activeTab === 'ignou-assignments' && (
+        <IgnouAssignmentPortal user={user} courses={courses} assignments={assignments} />
       )}
 
       {/* 7. ASSESSMENTS */}
