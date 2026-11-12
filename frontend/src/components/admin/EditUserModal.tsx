@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { updateUserAction } from '@/app/actions/userActions';
+import { fetchProgramsAction } from '@/app/actions/lmsActions';
+import { ProgramItem } from '@/lib/db';
 import { UserRole, UserStatus } from '@/lib/auth';
 import { X, Edit3, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw } from 'lucide-react';
 import { Toast } from '../ui/Toast';
@@ -27,9 +29,10 @@ export interface EditUserModalProps {
   } | null;
   onClose: () => void;
   onUserUpdated: () => void;
+  programs?: ProgramItem[];
 }
 
-export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUserModalProps) {
+export function EditUserModal({ isOpen, user, onClose, onUserUpdated, programs }: EditUserModalProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -42,6 +45,11 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUser
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Programs state for assignment dropdown
+  const [programsList, setProgramsList] = useState<ProgramItem[]>(programs || []);
+  const [loadingPrograms, setLoadingPrograms] = useState(false);
+  const [isCustomProgramme, setIsCustomProgramme] = useState(false);
+
   // Additional fields
   const [qualification, setQualification] = useState('');
   const [programme, setProgramme] = useState('');
@@ -53,6 +61,22 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUser
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (programs && programs.length > 0) {
+      setProgramsList(programs);
+    } else if (isOpen) {
+      setLoadingPrograms(true);
+      fetchProgramsAction()
+        .then((data) => {
+          if (data && data.length > 0) {
+            setProgramsList(data);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingPrograms(false));
+    }
+  }, [isOpen, programs]);
 
   useEffect(() => {
     if (user) {
@@ -70,6 +94,7 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUser
       setAddress(user.address || '');
       setImageUrl(user.imageUrl || '');
       setImagePreview(user.imageUrl || '');
+      setIsCustomProgramme(false);
     }
   }, [user]);
 
@@ -130,6 +155,10 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUser
   };
 
   if (!isOpen || !user) return null;
+
+  const selectedProgObj = programsList.find(
+    (p) => p.name === programme || p.code === programme || (programme && (p.name.toLowerCase().includes(programme.toLowerCase()) || programme.toLowerCase().includes(p.name.toLowerCase())))
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -357,16 +386,79 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated }: EditUser
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Programme</label>
-                <div className="relative">
-                  <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    value={programme}
-                    onChange={(e) => setProgramme(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                  />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    Assigned Programme <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomProgramme(!isCustomProgramme)}
+                    className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
+                  >
+                    {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
+                  </button>
                 </div>
+
+                {isCustomProgramme ? (
+                  <div className="relative">
+                    <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      value={programme}
+                      onChange={(e) => setProgramme(e.target.value)}
+                      placeholder="e.g. Master of Computer Applications (MCA)"
+                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                    />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                    <select
+                      value={selectedProgObj ? selectedProgObj.name : programme}
+                      onChange={(e) => {
+                        if (e.target.value === '__custom__') {
+                          setIsCustomProgramme(true);
+                        } else {
+                          setProgramme(e.target.value);
+                        }
+                      }}
+                      className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900 font-medium cursor-pointer"
+                    >
+                      {loadingPrograms ? (
+                        <option value="">Loading created programmes...</option>
+                      ) : (
+                        <>
+                          {/* If current assigned program doesn't strictly equal any program in list, preserve as option */}
+                          {programme && !programsList.some((p) => p.name === programme || p.code === programme) && (
+                            <option value={programme}>{programme} (Current)</option>
+                          )}
+                          {programsList.map((prog) => (
+                            <option key={prog.id} value={prog.name}>
+                              {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
+                            </option>
+                          ))}
+                          <option value="__custom__">✏️ + Enter Custom Programme Name</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+                )}
+
+                {selectedProgObj && !isCustomProgramme && (
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
+                    <span className="font-bold">Code: {selectedProgObj.code}</span>
+                    <span className="text-slate-300">•</span>
+                    <span>Medium: {selectedProgObj.medium || 'English'}</span>
+                    {selectedProgObj.eligibility && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="truncate max-w-[200px]" title={selectedProgObj.eligibility}>
+                          {selectedProgObj.eligibility}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

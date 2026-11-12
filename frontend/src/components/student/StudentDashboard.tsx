@@ -1148,7 +1148,12 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {allPrograms.map((prog) => {
                   const progPapers = allPapers.filter(p => p.programmeId === prog.id);
-                  const isCurrent = prog.name === user.programme || prog.code === '010';
+                  const isCurrent =
+                    prog.name === user.programme ||
+                    prog.code === user.programme ||
+                    (!!user.programme &&
+                      (prog.name.toLowerCase().includes(user.programme.toLowerCase()) ||
+                        user.programme.toLowerCase().includes(prog.name.toLowerCase())));
 
                   return (
                     <div

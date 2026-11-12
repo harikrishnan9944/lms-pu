@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { createUserAction } from '@/app/actions/userActions';
+import { fetchProgramsAction } from '@/app/actions/lmsActions';
+import { ProgramItem } from '@/lib/db';
 import { UserRole, UserStatus } from '@/lib/auth';
 import { X, UserPlus, Eye, EyeOff, Lock, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw } from 'lucide-react';
 import { Toast } from '../ui/Toast';
@@ -11,9 +13,10 @@ export interface CreateUserModalProps {
   onClose: () => void;
   onUserCreated: () => void;
   defaultRole?: UserRole;
+  programs?: ProgramItem[];
 }
 
-export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 'STUDENT' }: CreateUserModalProps) {
+export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 'STUDENT', programs }: CreateUserModalProps) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [username, setUsername] = useState('');
@@ -27,6 +30,11 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
   const [imagePreview, setImagePreview] = useState<string>('');
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Programs state for assignment dropdown
+  const [programsList, setProgramsList] = useState<ProgramItem[]>(programs || []);
+  const [loadingPrograms, setLoadingPrograms] = useState(false);
+  const [isCustomProgramme, setIsCustomProgramme] = useState(false);
 
   // Additional Role Fields
   const [qualification, setQualification] = useState('');
@@ -45,6 +53,31 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
       setRole(defaultRole);
     }
   }, [defaultRole, isOpen]);
+
+  // Load programs dynamically when modal opens
+  React.useEffect(() => {
+    if (programs && programs.length > 0) {
+      setProgramsList(programs);
+      if (!programme || programme === 'MCA') {
+        const mcaMatch = programs.find((p) => p.name.includes('MCA') || p.code === '010' || p.code === 'MCA');
+        setProgramme(mcaMatch ? mcaMatch.name : programs[0].name);
+      }
+    } else if (isOpen) {
+      setLoadingPrograms(true);
+      fetchProgramsAction()
+        .then((data) => {
+          if (data && data.length > 0) {
+            setProgramsList(data);
+            if (!programme || programme === 'MCA') {
+              const mcaMatch = data.find((p) => p.name.includes('MCA') || p.code === '010' || p.code === 'MCA');
+              setProgramme(mcaMatch ? mcaMatch.name : data[0].name);
+            }
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoadingPrograms(false));
+    }
+  }, [isOpen, programs]);
 
   const handleImageChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -104,12 +137,18 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
 
   if (!isOpen) return null;
 
+  const selectedProgObj = programsList.find(
+    (p) => p.name === programme || p.code === programme || (programme && (p.name.toLowerCase().includes(programme.toLowerCase()) || programme.toLowerCase().includes(p.name.toLowerCase())))
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
     setIsSubmitting(true);
 
     try {
+      const progCodeClean = (selectedProgObj?.code || programme).replace(/[^A-Za-z0-9]/g, '') || 'MCA';
+
       const result = await createUserAction({
         name,
         email,
@@ -121,7 +160,7 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
         programme,
         subject: (role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') ? subject : undefined,
         mobile,
-        studentId: role === 'STUDENT' ? (studentId || `PU2026${programme.replace(/[^A-Z]/g, '')}${Math.floor(100 + Math.random() * 900)}`) : undefined,
+        studentId: role === 'STUDENT' ? (studentId.trim() || `PU2026${progCodeClean}${Math.floor(100 + Math.random() * 900)}`) : undefined,
         semester: role === 'STUDENT' ? semester : undefined,
         address: role === 'STUDENT' ? address : undefined,
         imageUrl: imageUrl || undefined,
@@ -148,6 +187,9 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
       if (fileInputRef.current) fileInputRef.current.value = '';
       setRole(defaultRole);
       setStatus('ACTIVE');
+      setIsCustomProgramme(false);
+      const defaultProg = programsList.length > 0 ? (programsList.find(p => p.name.includes('MCA'))?.name || programsList[0].name) : 'MCA';
+      setProgramme(defaultProg);
       setIsSubmitting(false);
       onUserCreated();
       onClose();
@@ -405,17 +447,76 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Programme</label>
-                    <div className="relative">
-                      <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        value={programme}
-                        onChange={(e) => setProgramme(e.target.value)}
-                        placeholder="e.g. MCA, M.Sc CS"
-                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
-                      />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Assigned Programme <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomProgramme(!isCustomProgramme)}
+                        className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
+                      >
+                        {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
+                      </button>
                     </div>
+
+                    {isCustomProgramme ? (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <input
+                          type="text"
+                          value={programme}
+                          onChange={(e) => setProgramme(e.target.value)}
+                          placeholder="e.g. Master of Computer Applications (MCA)"
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                        <select
+                          value={selectedProgObj ? selectedProgObj.name : programme}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setIsCustomProgramme(true);
+                              setProgramme('');
+                            } else {
+                              setProgramme(e.target.value);
+                            }
+                          }}
+                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900 font-medium cursor-pointer"
+                        >
+                          {loadingPrograms ? (
+                            <option value="">Loading created programmes...</option>
+                          ) : programsList.length === 0 ? (
+                            <option value="MCA (Master of Computer Applications)">MCA (Master of Computer Applications) - 010</option>
+                          ) : (
+                            programsList.map((prog) => (
+                              <option key={prog.id} value={prog.name}>
+                                {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
+                              </option>
+                            ))
+                          )}
+                          <option value="__custom__">✏️ + Enter Custom Programme Name</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {selectedProgObj && !isCustomProgramme && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
+                        <span className="font-bold">Code: {selectedProgObj.code}</span>
+                        <span className="text-slate-300">•</span>
+                        <span>Medium: {selectedProgObj.medium || 'English'}</span>
+                        {selectedProgObj.eligibility && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span className="truncate max-w-[200px]" title={selectedProgObj.eligibility}>
+                              {selectedProgObj.eligibility}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -455,17 +556,76 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Programme</label>
-                    <div className="relative">
-                      <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        value={programme}
-                        onChange={(e) => setProgramme(e.target.value)}
-                        placeholder="e.g. MCA"
-                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
-                      />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Assigned Programme <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomProgramme(!isCustomProgramme)}
+                        className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
+                      >
+                        {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
+                      </button>
                     </div>
+
+                    {isCustomProgramme ? (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <input
+                          type="text"
+                          value={programme}
+                          onChange={(e) => setProgramme(e.target.value)}
+                          placeholder="e.g. Master of Computer Applications (MCA)"
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                        <select
+                          value={selectedProgObj ? selectedProgObj.name : programme}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setIsCustomProgramme(true);
+                              setProgramme('');
+                            } else {
+                              setProgramme(e.target.value);
+                            }
+                          }}
+                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900 font-medium cursor-pointer"
+                        >
+                          {loadingPrograms ? (
+                            <option value="">Loading created programmes...</option>
+                          ) : programsList.length === 0 ? (
+                            <option value="MCA (Master of Computer Applications)">MCA (Master of Computer Applications) - 010</option>
+                          ) : (
+                            programsList.map((prog) => (
+                              <option key={prog.id} value={prog.name}>
+                                {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
+                              </option>
+                            ))
+                          )}
+                          <option value="__custom__">✏️ + Enter Custom Programme Name</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {selectedProgObj && !isCustomProgramme && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
+                        <span className="font-bold">Code: {selectedProgObj.code}</span>
+                        <span className="text-slate-300">•</span>
+                        <span>Medium: {selectedProgObj.medium || 'English'}</span>
+                        {selectedProgObj.eligibility && (
+                          <>
+                            <span className="text-slate-300">•</span>
+                            <span className="truncate max-w-[200px]" title={selectedProgObj.eligibility}>
+                              {selectedProgObj.eligibility}
+                            </span>
+                          </>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>

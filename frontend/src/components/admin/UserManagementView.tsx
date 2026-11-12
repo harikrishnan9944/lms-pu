@@ -4,6 +4,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { fetchUsersAction, fetchMetricsAction, toggleUserStatusAction, autoAssignMentorsAction } from '@/app/actions/userActions';
+import { fetchProgramsAction } from '@/app/actions/lmsActions';
+import { ProgramItem } from '@/lib/db';
 
 import { CreateUserModal } from './CreateUserModal';
 import { EditUserModal } from './EditUserModal';
@@ -95,6 +97,7 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
 
   const [metrics, setMetrics] = useState<Metrics>(initialMetrics);
   const [users, setUsers] = useState<UserItem[]>([]);
+  const [programs, setPrograms] = useState<ProgramItem[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
@@ -124,7 +127,7 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [usersRes, metricsRes] = await Promise.all([
+      const [usersRes, metricsRes, progsRes] = await Promise.all([
         fetchUsersAction({
           page: currentPage,
           limit,
@@ -135,12 +138,16 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
           semester: semesterFilter,
         }),
         fetchMetricsAction(),
+        fetchProgramsAction().catch(() => []),
       ]);
 
       setUsers(usersRes.users as UserItem[]);
       setTotalCount(usersRes.totalCount);
       setTotalPages(usersRes.totalPages);
       setMetrics(metricsRes);
+      if (progsRes && progsRes.length > 0) {
+        setPrograms(progsRes);
+      }
     } catch (err: any) {
       setToast({ message: err.message || 'Failed to load users data.', type: 'error' });
     } finally {
@@ -415,12 +422,21 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
                 className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-800"
               >
                 <option value="ALL">All Programmes</option>
-                <option value="MCA">MCA</option>
-                <option value="M.Sc. Computer Science">M.Sc. Computer Science</option>
-                <option value="M.Sc. Data Science">M.Sc. Data Science</option>
-                <option value="BCA">BCA</option>
-                <option value="B.Sc. Computer Science">B.Sc. Computer Science</option>
-                <option value="MBA">MBA</option>
+                {programs.length > 0 ? (
+                  programs.map((p) => (
+                    <option key={p.id} value={p.name}>
+                      {p.name} ({p.code})
+                    </option>
+                  ))
+                ) : (
+                  <>
+                    <option value="MCA">MCA</option>
+                    <option value="M.Sc. Computer Science">M.Sc. Computer Science</option>
+                    <option value="M.Sc. Data Science">M.Sc. Data Science</option>
+                    <option value="BCA">BCA</option>
+                    <option value="MBA">MBA</option>
+                  </>
+                )}
               </select>
             </div>
 
@@ -669,7 +685,8 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
       {/* Modals */}
       <CreateUserModal
         isOpen={createModalOpen}
-        defaultRole={userSubRole !== 'ALL' ? userSubRole : 'PROGRAM_COORDINATOR'}
+        defaultRole={userSubRole !== 'ALL' ? userSubRole : 'STUDENT'}
+        programs={programs}
         onClose={() => setCreateModalOpen(false)}
         onUserCreated={() => {
           setToast({ message: 'User account created successfully!', type: 'success' });
@@ -680,6 +697,7 @@ export function UserManagementView({ initialMetrics }: UserManagementViewProps) 
       <EditUserModal
         isOpen={editModalOpen}
         user={selectedUser}
+        programs={programs}
         onClose={() => {
           setEditModalOpen(false);
           setSelectedUser(null);
