@@ -126,6 +126,61 @@ function formatVideoTime(seconds?: number): string {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+function parseVideoSource(rawUrl: string) {
+  const url = (rawUrl || '').trim();
+  if (!url) return { type: 'empty', url: '', embedUrl: '' };
+
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    return {
+      type: 'youtube',
+      embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&enablejsapi=1&rel=0`,
+      url,
+    };
+  }
+
+  const gdriveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdriveMatch && gdriveMatch[1]) {
+    return {
+      type: 'gdrive',
+      embedUrl: `https://drive.google.com/file/d/${gdriveMatch[1]}/preview`,
+      url,
+    };
+  }
+
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return {
+      type: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`,
+      url,
+    };
+  }
+
+  const isDirectVideo =
+    url.startsWith('blob:') ||
+    url.startsWith('/uploads/') ||
+    url.includes('/uploads/') ||
+    /\.(mp4|webm|ogg|mov|m4v|mkv|avi|flv)($|\?)/i.test(url) ||
+    url.includes('commondatastorage.googleapis.com') ||
+    url.includes('.mp4') ||
+    url.includes('.webm');
+
+  if (isDirectVideo) {
+    return {
+      type: 'html5',
+      embedUrl: '',
+      url,
+    };
+  }
+
+  return {
+    type: 'iframe',
+    embedUrl: url,
+    url,
+  };
+}
+
 export function StudentDashboard({ user }: StudentDashboardProps) {
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
@@ -362,6 +417,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
   const [videoDuration, setVideoDuration] = useState(0);
   const [videoPercentage, setVideoPercentage] = useState(0);
   const [videoIsCompleted, setVideoIsCompleted] = useState(false);
+  const [videoLoadError, setVideoLoadError] = useState(false);
   const videoElementRef = React.useRef<HTMLVideoElement | null>(null);
   const lastSyncTimeRef = React.useRef<number>(0);
 
@@ -594,6 +650,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     setVideoDuration(saved.duration || 600);
     setVideoPercentage(saved.percentage || 0);
     setVideoIsCompleted(saved.isCompleted || saved.percentage >= 90);
+    setVideoLoadError(false);
 
     setVideoPlayerModal({
       open: true,
@@ -2564,23 +2621,48 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="space-y-1 pr-8">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 text-[11px] font-extrabold uppercase bg-rose-100 text-rose-700 rounded-md flex items-center gap-1">
-                  <Video className="w-3 h-3" /> Lecture Video
-                </span>
-                {videoPlayerModal.semesterName && (
-                  <span className="px-2.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800 rounded-md">
-                    {videoPlayerModal.semesterName}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3 pr-8">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 text-[11px] font-extrabold uppercase bg-rose-100 text-rose-700 rounded-md flex items-center gap-1">
+                    <Video className="w-3 h-3 text-rose-600" /> Lecture Video
                   </span>
+                  {videoPlayerModal.semesterName && (
+                    <span className="px-2.5 py-0.5 text-[11px] font-bold bg-amber-100 text-amber-800 rounded-md">
+                      {videoPlayerModal.semesterName}
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-xl font-extrabold text-slate-900 leading-snug">{videoPlayerModal.title}</h3>
+                {videoPlayerModal.paperName && (
+                  <p className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-600" /> {videoPlayerModal.paperName}
+                  </p>
                 )}
               </div>
-              <h3 className="text-xl font-extrabold text-slate-900 leading-snug">{videoPlayerModal.title}</h3>
-              {videoPlayerModal.paperName && (
-                <p className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-600" /> {videoPlayerModal.paperName}
-                </p>
-              )}
+
+              {/* Direct Open & Download Actions */}
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={videoPlayerModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-200 shadow-sm"
+                  title="Open video in separate tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Open Tab</span>
+                </a>
+                <a
+                  href={videoPlayerModal.url}
+                  download
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-indigo-200 shadow-sm"
+                  title="Download video file"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Download</span>
+                </a>
+              </div>
             </div>
 
             {/* Resume Notice Banner (Requirement: Resume from where left off) */}
@@ -2609,57 +2691,92 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             {/* Video Player Box */}
             <div className="relative w-full aspect-video rounded-2xl bg-black overflow-hidden shadow-inner flex items-center justify-center">
               {(() => {
-                const url = videoPlayerModal.url || '';
-                let embedUrl = null;
-                const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-                if (ytMatch && ytMatch[1]) {
-                  const startParam = videoPlayerModal.lastPosition > 0 ? `&start=${Math.floor(videoPlayerModal.lastPosition)}` : '';
-                  embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&enablejsapi=1${startParam}`;
-                }
-
-                if (embedUrl) {
+                const parsed = parseVideoSource(videoPlayerModal.url);
+                if (parsed.type === 'youtube' || parsed.type === 'gdrive' || parsed.type === 'vimeo') {
+                  const startParam =
+                    parsed.type === 'youtube' && videoPlayerModal.lastPosition > 0
+                      ? `&start=${Math.floor(videoPlayerModal.lastPosition)}`
+                      : '';
                   return (
                     <iframe
-                      src={embedUrl}
+                      key={parsed.embedUrl}
+                      src={`${parsed.embedUrl}${startParam}`}
                       title={videoPlayerModal.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowFullScreen
                       className="w-full h-full border-0"
                     />
                   );
-                } else if (url.startsWith('blob:') || url.match(/\.(mp4|webm|ogg)($|\?)/i)) {
+                } else if (parsed.type === 'html5') {
                   return (
-                    <video
-                      ref={videoElementRef}
-                      controls
-                      autoPlay
-                      playsInline
-                      onLoadedMetadata={(e) => {
-                        const dur = e.currentTarget.duration || 0;
-                        setVideoDuration(dur);
-                        if (videoPlayerModal.lastPosition > 0 && videoPlayerModal.lastPosition < dur - 2) {
-                          e.currentTarget.currentTime = videoPlayerModal.lastPosition;
-                        }
-                      }}
-                      onTimeUpdate={(e) => {
-                        const cur = e.currentTarget.currentTime || 0;
-                        const dur = e.currentTarget.duration || videoDuration || 0;
-                        handleVideoProgressUpdate(videoPlayerModal.resourceId, cur, dur);
-                      }}
-                      onEnded={() => {
-                        handleVideoProgressUpdate(videoPlayerModal.resourceId, videoDuration, videoDuration);
-                        setToast({ message: 'Lecture video completed! 100% progress recorded.', type: 'success' });
-                      }}
-                      className="w-full h-full object-contain"
-                    >
-                      <source src={url} />
-                      Your browser does not support html5 video playback.
-                    </video>
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      <video
+                        key={parsed.url}
+                        src={parsed.url}
+                        ref={videoElementRef}
+                        controls
+                        autoPlay
+                        playsInline
+                        preload="auto"
+                        onError={() => setVideoLoadError(true)}
+                        onLoadedMetadata={(e) => {
+                          setVideoLoadError(false);
+                          const dur = e.currentTarget.duration || 0;
+                          setVideoDuration(dur);
+                          if (videoPlayerModal.lastPosition > 0 && videoPlayerModal.lastPosition < dur - 2) {
+                            e.currentTarget.currentTime = videoPlayerModal.lastPosition;
+                          }
+                        }}
+                        onTimeUpdate={(e) => {
+                          const cur = e.currentTarget.currentTime || 0;
+                          const dur = e.currentTarget.duration || videoDuration || 0;
+                          handleVideoProgressUpdate(videoPlayerModal.resourceId, cur, dur);
+                        }}
+                        onEnded={() => {
+                          handleVideoProgressUpdate(videoPlayerModal.resourceId, videoDuration, videoDuration);
+                          setToast({ message: 'Lecture video completed! 100% progress recorded.', type: 'success' });
+                        }}
+                        className="w-full h-full object-contain bg-black"
+                      >
+                        <source src={parsed.url} />
+                        Your browser does not support html5 video playback.
+                      </video>
+
+                      {videoLoadError && (
+                        <div className="absolute inset-0 bg-slate-900/90 flex flex-col items-center justify-center p-6 text-center text-white space-y-3 z-10">
+                          <AlertCircle className="w-10 h-10 text-amber-400" />
+                          <h4 className="font-extrabold text-sm sm:text-base">Unable to stream video container directly</h4>
+                          <p className="text-xs text-slate-300 max-w-sm">
+                            This video format or codec cannot be decoded natively by your web browser. You can open it in a browser tab or download it directly.
+                          </p>
+                          <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                            <a
+                              href={parsed.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                              <span>Play in Browser Tab</span>
+                            </a>
+                            <a
+                              href={parsed.url}
+                              download
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow"
+                            >
+                              <Download className="w-3.5 h-3.5" />
+                              <span>Download Video</span>
+                            </a>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 } else {
                   return (
                     <iframe
-                      src={url}
+                      key={parsed.url}
+                      src={parsed.url}
                       title={videoPlayerModal.title}
                       className="w-full h-full border-0 bg-white"
                     />

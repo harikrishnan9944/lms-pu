@@ -115,6 +115,61 @@ function formatVideoTime(seconds?: number): string {
   return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
 }
 
+function parseVideoSource(rawUrl: string) {
+  const url = (rawUrl || '').trim();
+  if (!url) return { type: 'empty', url: '', embedUrl: '' };
+
+  const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=|shorts\/))([\w-]{11})/i);
+  if (ytMatch && ytMatch[1]) {
+    return {
+      type: 'youtube',
+      embedUrl: `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1&enablejsapi=1&rel=0`,
+      url,
+    };
+  }
+
+  const gdriveMatch = url.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/i);
+  if (gdriveMatch && gdriveMatch[1]) {
+    return {
+      type: 'gdrive',
+      embedUrl: `https://drive.google.com/file/d/${gdriveMatch[1]}/preview`,
+      url,
+    };
+  }
+
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/i);
+  if (vimeoMatch && vimeoMatch[1]) {
+    return {
+      type: 'vimeo',
+      embedUrl: `https://player.vimeo.com/video/${vimeoMatch[1]}?autoplay=1`,
+      url,
+    };
+  }
+
+  const isDirectVideo =
+    url.startsWith('blob:') ||
+    url.startsWith('/uploads/') ||
+    url.includes('/uploads/') ||
+    /\.(mp4|webm|ogg|mov|m4v|mkv|avi|flv)($|\?)/i.test(url) ||
+    url.includes('commondatastorage.googleapis.com') ||
+    url.includes('.mp4') ||
+    url.includes('.webm');
+
+  if (isDirectVideo) {
+    return {
+      type: 'html5',
+      embedUrl: '',
+      url,
+    };
+  }
+
+  return {
+    type: 'iframe',
+    embedUrl: url,
+    url,
+  };
+}
+
 interface FacultyDashboardProps {
   user?: UserSessionPayload;
 }
@@ -3961,6 +4016,58 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
                   placeholder="https://youtube.com/watch?... or uploaded file link"
                   className="w-full p-2.5 border border-slate-300 rounded-xl bg-white focus:ring-2 focus:ring-amber-500 text-slate-800 font-mono text-xs"
                 />
+
+                {/* Instant Video Preview Box */}
+                {resFileUrl && resFileType === 'Video Link' && (
+                  <div className="mt-3 p-3 bg-slate-900 rounded-xl space-y-2">
+                    <div className="flex items-center justify-between text-xs text-slate-300">
+                      <span className="font-bold flex items-center gap-1.5 text-white">
+                        <Play className="w-3.5 h-3.5 text-rose-400 fill-current" />
+                        <span>Instant Video Preview</span>
+                      </span>
+                      <a
+                        href={resFileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-amber-400 hover:underline flex items-center gap-1 font-semibold"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        <span>Test in New Tab</span>
+                      </a>
+                    </div>
+                    <div className="aspect-video w-full rounded-lg bg-black overflow-hidden relative flex items-center justify-center">
+                      {(() => {
+                        const parsed = parseVideoSource(resFileUrl);
+                        if (parsed.type === 'youtube' || parsed.type === 'gdrive' || parsed.type === 'vimeo') {
+                          return (
+                            <iframe
+                              src={parsed.embedUrl}
+                              title="Preview"
+                              allowFullScreen
+                              className="w-full h-full border-0"
+                            />
+                          );
+                        } else if (parsed.type === 'html5') {
+                          return (
+                            <video
+                              key={parsed.url}
+                              src={parsed.url}
+                              controls
+                              className="w-full h-full object-contain"
+                            >
+                              <source src={parsed.url} />
+                              Your browser does not support html5 video playback.
+                            </video>
+                          );
+                        } else {
+                          return (
+                            <iframe src={parsed.url} title="Preview" className="w-full h-full border-0 bg-white" />
+                          );
+                        }
+                      })()}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Notes */}
@@ -5088,56 +5195,85 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
               <X className="w-5 h-5" />
             </button>
 
-            <div className="space-y-1 pr-8">
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 text-[11px] font-extrabold uppercase bg-amber-100 text-amber-800 rounded-md flex items-center gap-1">
-                  <Video className="w-3 h-3 text-amber-600" /> Resource Preview
-                </span>
-                {videoPlayerModal.semesterName && (
-                  <span className="px-2.5 py-0.5 text-[11px] font-bold bg-indigo-100 text-indigo-800 rounded-md">
-                    {videoPlayerModal.semesterName}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b pb-3 pr-8">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 text-[11px] font-extrabold uppercase bg-amber-100 text-amber-800 rounded-md flex items-center gap-1">
+                    <Video className="w-3 h-3 text-amber-600" /> Resource Preview
                   </span>
+                  {videoPlayerModal.semesterName && (
+                    <span className="px-2.5 py-0.5 text-[11px] font-bold bg-indigo-100 text-indigo-800 rounded-md">
+                      {videoPlayerModal.semesterName}
+                    </span>
+                  )}
+                </div>
+                <h3 className="text-xl font-extrabold text-slate-900 leading-snug">{videoPlayerModal.title}</h3>
+                {videoPlayerModal.paperName && (
+                  <p className="text-xs font-semibold text-slate-500 flex items-center gap-1">
+                    <BookOpen className="w-3.5 h-3.5 text-indigo-600" /> {videoPlayerModal.paperName}
+                  </p>
                 )}
               </div>
-              <h3 className="text-xl font-extrabold text-slate-900 leading-snug">{videoPlayerModal.title}</h3>
-              {videoPlayerModal.paperName && (
-                <p className="text-xs font-semibold text-slate-500 flex items-center gap-1">
-                  <BookOpen className="w-3.5 h-3.5 text-indigo-600" /> {videoPlayerModal.paperName}
-                </p>
-              )}
+
+              {/* Direct Open & Download Actions */}
+              <div className="flex items-center gap-2 shrink-0">
+                <a
+                  href={videoPlayerModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-slate-200 shadow-sm"
+                  title="Open video in separate tab"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Open Tab</span>
+                </a>
+                <a
+                  href={videoPlayerModal.url}
+                  download
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs flex items-center gap-1.5 transition-colors border border-indigo-200 shadow-sm"
+                  title="Download video file"
+                >
+                  <Download className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Download</span>
+                </a>
+              </div>
             </div>
 
             {/* Video / Resource Player Box */}
             <div className="relative w-full aspect-video rounded-2xl bg-black overflow-hidden shadow-inner flex items-center justify-center">
               {(() => {
-                const url = videoPlayerModal.url || '';
-                let embedUrl = null;
-                const ytMatch = url.match(/(?:youtu\.be\/|youtube\.com\/(?:embed\/|v\/|watch\?v=|watch\?.+&v=))([\w-]{11})/);
-                if (ytMatch && ytMatch[1]) {
-                  embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}?autoplay=1`;
-                }
-
-                if (embedUrl) {
+                const parsed = parseVideoSource(videoPlayerModal.url);
+                if (parsed.type === 'youtube' || parsed.type === 'gdrive' || parsed.type === 'vimeo') {
                   return (
                     <iframe
-                      src={embedUrl}
+                      key={parsed.embedUrl}
+                      src={parsed.embedUrl}
                       title={videoPlayerModal.title}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                       allowFullScreen
                       className="w-full h-full border-0"
                     />
                   );
-                } else if (url.startsWith('blob:') || url.match(/\.(mp4|webm|ogg)($|\?)/i)) {
+                } else if (parsed.type === 'html5') {
                   return (
-                    <video controls autoPlay className="w-full h-full object-contain">
-                      <source src={url} />
+                    <video
+                      key={parsed.url}
+                      src={parsed.url}
+                      controls
+                      autoPlay
+                      playsInline
+                      preload="auto"
+                      className="w-full h-full object-contain bg-black"
+                    >
+                      <source src={parsed.url} />
                       Your browser does not support html5 video playback.
                     </video>
                   );
                 } else {
                   return (
                     <iframe
-                      src={url}
+                      key={parsed.url}
+                      src={parsed.url}
                       title={videoPlayerModal.title}
                       className="w-full h-full border-0 bg-white"
                     />
