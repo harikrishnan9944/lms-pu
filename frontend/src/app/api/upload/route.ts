@@ -20,25 +20,26 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: false, error: 'No file provided.' }, { status: 400 });
     }
 
-    // File size limit: 25MB
-    const MAX_SIZE = 25 * 1024 * 1024;
+    // File size limit: 250MB (supports videos and larger study materials)
+    const MAX_SIZE = 250 * 1024 * 1024;
     if (file.size > MAX_SIZE) {
       return NextResponse.json(
-        { success: false, error: 'File size exceeds maximum permitted limit of 25MB.' },
+        { success: false, error: 'File size exceeds maximum permitted limit of 250MB.' },
         { status: 400 }
       );
     }
 
-    // Supported extensions check
+    // Supported extensions check including videos, documents, and archives
     const allowedExts = [
       '.pdf', '.doc', '.docx', '.ppt', '.pptx',
       '.xls', '.xlsx', '.txt', '.zip', '.rar',
-      '.png', '.jpg', '.jpeg', '.webp'
+      '.png', '.jpg', '.jpeg', '.webp',
+      '.mp4', '.webm', '.mov', '.mkv', '.avi', '.flv', '.m4v'
     ];
     const originalExt = path.extname(file.name).toLowerCase();
     if (!allowedExts.includes(originalExt)) {
       return NextResponse.json(
-        { success: false, error: `Unsupported file format (${originalExt}). Allowed formats: PDF, DOC, DOCX, PPT, XLS, TXT, ZIP, Images.` },
+        { success: false, error: `Unsupported file format (${originalExt}). Allowed formats: MP4, WEBM, MOV, PDF, DOC, DOCX, PPT, XLS, TXT, ZIP, Images.` },
         { status: 400 }
       );
     }

@@ -98,6 +98,7 @@ import {
   TrendingUp,
   BarChart3,
   User,
+  Sparkles,
   ChevronDown,
   ChevronUp,
   Filter,
@@ -318,9 +319,10 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
   // Drag and drop video upload state
   const [isDragging, setIsDragging] = useState(false);
   const [draggedFileDetails, setDraggedFileDetails] = useState<{ name: string; size: string } | null>(null);
+  const [isUploadingResource, setIsUploadingResource] = useState(false);
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
-  const handleProcessUploadedFile = (file: File) => {
+  const handleProcessUploadedFile = async (file: File) => {
     const fileName = file.name;
     const ext = fileName.split('.').pop()?.toLowerCase() || '';
     const sizeInMB = (file.size / (1024 * 1024)).toFixed(2);
@@ -331,7 +333,7 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
       setResTitle(titleWithoutExt);
     }
 
-    if (['mp4', 'webm', 'mov', 'mkv', 'avi', 'flv'].includes(ext)) {
+    if (['mp4', 'webm', 'mov', 'mkv', 'avi', 'flv', 'm4v'].includes(ext)) {
       setResFileType('Video Link');
     } else if (['pdf'].includes(ext)) {
       setResFileType('PDF');
@@ -341,8 +343,36 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
       setResFileType('Image');
     }
 
-    const objectUrl = URL.createObjectURL(file);
-    setResFileUrl(objectUrl);
+    if (file.size > 250 * 1024 * 1024) {
+      setToast({
+        message: `File is ${sizeInMB} MB. Server limit is 250 MB. For very large videos, please enter a YouTube or Google Drive link directly.`,
+        type: 'error',
+      });
+      return;
+    }
+
+    setIsUploadingResource(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+      if (data.success && data.url) {
+        setResFileUrl(data.url);
+        setToast({ message: 'Resource file uploaded to server successfully!', type: 'success' });
+      } else {
+        setToast({ message: data.error || 'Failed to upload file to server.', type: 'error' });
+      }
+    } catch {
+      setToast({ message: 'Error uploading file to server. Please try again or provide an external link.', type: 'error' });
+    } finally {
+      setIsUploadingResource(false);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -825,11 +855,11 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
       fileType: resFileType,
       fileUrl: resFileUrl || '#download-material',
       notes: resNotes,
-      programmeId: resProgramId || selProg?.id,
-      programmeName: selProg?.name || crs?.programmeName || 'MCA (Master of Computer Applications)',
-      semesterName: resSemesterName || selPaper?.semesterName || 'Semester 1',
-      paperId: selPaper?.id || resPaperId,
-      paperName: selPaper?.name || 'General Paper',
+      programmeId: resProgramId || selProg?.id || selPaper?.programmeId || crs?.programmeId,
+      programmeName: selProg?.name || selPaper?.programmeName || crs?.programmeName || 'Academic Degree',
+      semesterName: resSemesterName || selPaper?.semesterName || crs?.semester || 'Semester 1',
+      paperId: selPaper?.id || resPaperId || crs?.id,
+      paperName: selPaper?.name || crs?.name || 'General Paper',
       unitNumber: Number(resUnitNumber) || 1,
       unitName: `Unit ${Number(resUnitNumber) || 1}`,
     });
@@ -3945,8 +3975,19 @@ export function FacultyDashboard({ user }: FacultyDashboardProps) {
                 />
               </div>
 
-              <button type="submit" className="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold rounded-xl shadow-md transition-all">
-                {editingResourceId ? 'Update & Save Changes' : 'Upload & Save Resource'}
+              <button
+                type="submit"
+                disabled={isUploadingResource}
+                className="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold rounded-xl shadow-md transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {isUploadingResource && <Sparkles className="w-4 h-4 animate-spin" />}
+                <span>
+                  {isUploadingResource
+                    ? 'Uploading File to Server...'
+                    : editingResourceId
+                    ? 'Update & Save Changes'
+                    : 'Upload & Save Resource'}
+                </span>
               </button>
             </form>
           </div>

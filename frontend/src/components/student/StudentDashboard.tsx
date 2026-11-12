@@ -365,25 +365,84 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
   const videoElementRef = React.useRef<HTMLVideoElement | null>(null);
   const lastSyncTimeRef = React.useRef<number>(0);
 
-  // Active Selected Semester Filter for Student Portal
+  // Active Selected Semester & Programme Filter for Student Portal
   const currentSem = user.semester || 'Semester 1';
   const [selectedSemester, setSelectedSemester] = useState<string>(currentSem);
+  const [selectedProgram, setSelectedProgram] = useState<string>(user.programme || 'MCA');
 
   useEffect(() => {
-    setSelectedSemester(user.semester || 'Semester 1');
-  }, [user.semester]);
+    if (user.semester) setSelectedSemester(user.semester);
+    if (user.programme) setSelectedProgram(user.programme);
+  }, [user.semester, user.programme]);
 
-  const userProg = user.programme || 'MCA';
+  const activeProg = selectedProgram || user.programme || 'MCA';
+
+  // Resilient text and semester matching helpers
+  const cleanStr = (s?: string | null) => (s || '').trim().toLowerCase();
+  const getSemNum = (s?: string | null) => {
+    if (!s) return '';
+    const m = s.match(/\d+/);
+    return m ? m[0] : s.trim().toLowerCase();
+  };
+
+  const isProgMatch = (progA?: string | null, progB?: string | null, idA?: string | null, idB?: string | null) => {
+    if (!progA && !idA) return true;
+    if (!progB && !idB) return true;
+    const a = cleanStr(progA);
+    const b = cleanStr(progB);
+    if (a && b && (a === b || a.includes(b) || b.includes(a))) return true;
+    if (idA && idB && idA === idB) return true;
+    if (idA && b && (idA === b || b.includes(idA))) return true;
+    if (idB && a && (idB === a || a.includes(idB))) return true;
+    return false;
+  };
+
+  const isSemMatch = (semA?: string | null, semB?: string | null) => {
+    if (!semA || !semB) return true;
+    const nA = getSemNum(semA);
+    const nB = getSemNum(semB);
+    if (nA && nB && nA === nB) return true;
+    return cleanStr(semA) === cleanStr(semB);
+  };
+
+  // Merge curriculum papers assigned by Programme Coordinator into courses list
+  const combinedCourses: CourseItem[] = [...courses];
+  allPapers.forEach((paper) => {
+    const existing = combinedCourses.find(
+      (c) => c.code === paper.code || c.id === paper.id || (cleanStr(c.name) === cleanStr(paper.name) && isSemMatch(c.semester, paper.semesterName))
+    );
+    if (!existing) {
+      combinedCourses.push({
+        id: paper.id,
+        name: paper.name,
+        code: paper.code,
+        programmeId: paper.programmeId,
+        programmeName: paper.programmeName || activeProg,
+        semester: paper.semesterName,
+        subject: paper.name,
+        facultyId: paper.facultyId || '',
+        facultyName: paper.facultyName || 'Course Coordinator',
+        assessment: 'Continuous Evaluation (30%), Term-End (70%)',
+        status: paper.status,
+      });
+    } else {
+      if ((!existing.facultyName || existing.facultyName === 'Unassigned Faculty') && paper.facultyName) {
+        existing.facultyName = paper.facultyName;
+        existing.facultyId = paper.facultyId || existing.facultyId;
+      }
+    }
+  });
 
   // Filter courses for student's enrolled programme and selected semester
-  const filteredCourses = courses.filter((c) => {
-    const matchProg = !c.programmeName || c.programmeName.toLowerCase().includes(userProg.toLowerCase()) || userProg.toLowerCase().includes(c.programmeName.toLowerCase());
-    const matchSem = !c.semester || c.semester === selectedSemester;
+  const filteredCourses = combinedCourses.filter((c) => {
+    const matchProg = !c.programmeName || isProgMatch(c.programmeName, activeProg, c.programmeId);
+    const matchSem = !c.semester || isSemMatch(c.semester, selectedSemester);
     return matchProg && matchSem;
   });
 
   const enrolledCourseIds = new Set(filteredCourses.map((c) => c.id));
-  const enrolledCourseNames = new Set(filteredCourses.map((c) => c.name.toLowerCase()));
+  const enrolledCourseCodes = new Set(filteredCourses.map((c) => cleanStr(c.code)));
+  const enrolledCourseNames = new Set(filteredCourses.map((c) => cleanStr(c.name)));
 
   // Filter learning resources uploaded by faculty for enrolled courses, program, & semester
   const filteredResources = resources.filter((r) => {
@@ -393,38 +452,45 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
     if (resourceUnitFilter !== 'ALL' && String(r.unitNumber || 1) !== resourceUnitFilter) {
       return false;
     }
-    if (r.programmeName && userProg) {
-      const pMatch = r.programmeName.toLowerCase().includes(userProg.toLowerCase()) || userProg.toLowerCase().includes(r.programmeName.toLowerCase());
-      if (!pMatch) return false;
-    }
-    if (r.semesterName && selectedSemester) {
-      if (r.semesterName !== selectedSemester) return false;
-    }
-    if (!r.programmeName && !r.semesterName) {
-      if (r.courseId || r.courseName) {
-        const matchCourse = enrolledCourseIds.has(r.courseId) || enrolledCourseNames.has(r.courseName.toLowerCase());
-        if (!matchCourse) return false;
-      }
-    }
-    return true;
+
+    const matchProg = isProgMatch(r.programmeName, activeProg, r.programmeId);
+    const matchSem = isSemMatch(r.semesterName, selectedSemester);
+
+    const matchesCourseOrPaper = 
+      (r.courseId && enrolledCourseIds.has(r.courseId)) ||
+      (r.paperId && enrolledCourseIds.has(r.paperId)) ||
+      (r.courseName && enrolledCourseNames.has(cleanStr(r.courseName))) ||
+      (r.paperName && enrolledCourseNames.has(cleanStr(r.paperName))) ||
+      (r.subject && enrolledCourseNames.has(cleanStr(r.subject)));
+
+    // Matches if both program and semester match
+    if (matchProg && matchSem) return true;
+
+    // Or if linked directly to an enrolled course/paper for the current semester
+    if (matchesCourseOrPaper && matchSem) return true;
+
+    // Or if resource doesn't specify programme/semester, but matches an enrolled course
+    if (!r.programmeName && !r.semesterName && matchesCourseOrPaper) return true;
+
+    return false;
   });
 
   // Filter assignments created by faculty for enrolled courses
   const filteredAssignments = assignments.filter((a) => {
     if (!a.courseId && !a.courseName) return true;
-    return enrolledCourseIds.has(a.courseId) || enrolledCourseNames.has(a.courseName.toLowerCase());
+    return enrolledCourseIds.has(a.courseId) || enrolledCourseNames.has(cleanStr(a.courseName));
   });
 
   // Filter live schedules created by faculty
   const filteredSchedules = schedules.filter((s) => {
     if (!s.courseId && !s.courseName) return true;
-    return enrolledCourseIds.has(s.courseId) || enrolledCourseNames.has(s.courseName.toLowerCase());
+    return enrolledCourseIds.has(s.courseId) || enrolledCourseNames.has(cleanStr(s.courseName));
   });
 
   // Filter online assessments
   const filteredAssessments = assessments.filter((a) => {
     if (!a.courseId && !a.courseName) return true;
-    return enrolledCourseIds.has(a.courseId) || enrolledCourseNames.has(a.courseName.toLowerCase());
+    return enrolledCourseIds.has(a.courseId) || enrolledCourseNames.has(cleanStr(a.courseName));
   });
 
   const loadData = async () => {
@@ -853,6 +919,26 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
             <span>Home</span>
           </button>
 
+          {/* Programme Selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Programme:</span>
+            <select
+              value={selectedProgram}
+              onChange={(e) => setSelectedProgram(e.target.value)}
+              className="px-3.5 py-1.5 bg-indigo-50 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm"
+            >
+              {allPrograms.length > 0 ? (
+                allPrograms.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.name} ({p.code})
+                  </option>
+                ))
+              ) : (
+                <option value={activeProg}>{activeProg}</option>
+              )}
+            </select>
+          </div>
+
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-600 uppercase tracking-wider">Viewing Semester:</span>
             <select
@@ -1277,7 +1363,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                 <span>Learning Resources & Video Lectures Hub</span>
               </h2>
               <p className="text-xs text-slate-500 mt-1">
-                Faculty video lectures, study materials & PDFs uploaded for {userProg} • {selectedSemester}
+                Faculty video lectures, study materials & PDFs uploaded for {activeProg} • {selectedSemester}
               </p>
             </div>
 
@@ -1426,7 +1512,7 @@ export function StudentDashboard({ user }: StudentDashboardProps) {
                     <div className="space-y-1.5 pt-1">
                       <div className="flex flex-wrap gap-1.5">
                         <span className="px-2.5 py-0.5 bg-indigo-50 text-indigo-700 rounded-md font-bold text-[11px] flex items-center gap-1">
-                          🎓 {res.programmeName || userProg}
+                          🎓 {res.programmeName || activeProg}
                         </span>
                         <span className="px-2.5 py-0.5 bg-amber-50 text-amber-800 rounded-md font-bold text-[11px] flex items-center gap-1">
                           📅 {res.semesterName || selectedSemester}
