@@ -5,7 +5,7 @@ import { createUserAction } from '@/app/actions/userActions';
 import { fetchProgramsAction } from '@/app/actions/lmsActions';
 import { ProgramItem } from '@/lib/db';
 import { UserRole, UserStatus } from '@/lib/auth';
-import { X, UserPlus, Eye, EyeOff, Lock, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw } from 'lucide-react';
+import { X, UserPlus, Eye, EyeOff, Lock, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw, Info } from 'lucide-react';
 import { Toast } from '../ui/Toast';
 
 export interface CreateUserModalProps {
@@ -157,8 +157,8 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
         role,
         status,
         qualification: (role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') ? qualification : undefined,
-        programme,
-        subject: (role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') ? subject : undefined,
+        programme: role === 'STUDENT' ? programme : undefined,
+        subject: (role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') ? (subject.trim() || undefined) : undefined,
         mobile,
         studentId: role === 'STUDENT' ? (studentId.trim() || `PU2026${progCodeClean}${Math.floor(100 + Math.random() * 900)}`) : undefined,
         semester: role === 'STUDENT' ? semester : undefined,
@@ -431,122 +431,57 @@ export function CreateUserModal({ isOpen, onClose, onUserCreated, defaultRole = 
                 : 'Student Profile Fields'}
             </h4>
 
-            {/* Programme Coordinator & Admin & Faculty & Mentor Fields: Qualification, Programme, Subject, Mobile */}
+            {/* Programme Coordinator & Admin & Faculty & Mentor Fields: Qualification, Specialization/Subject, Mobile */}
             {(role === 'ADMIN' || role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') && (
               <>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-3 bg-sky-50/80 border border-sky-100 rounded-xl text-xs text-sky-900 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Qualification</label>
-                    <input
-                      type="text"
-                      value={qualification}
-                      onChange={(e) => setQualification(e.target.value)}
-                      placeholder="e.g. M.Tech, Ph.D. in CS"
-                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-semibold text-slate-700">
-                        Assigned Programme <span className="text-rose-500">*</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setIsCustomProgramme(!isCustomProgramme)}
-                        className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
-                      >
-                        {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
-                      </button>
-                    </div>
-
-                    {isCustomProgramme ? (
-                      <div className="relative">
-                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                        <input
-                          type="text"
-                          value={programme}
-                          onChange={(e) => setProgramme(e.target.value)}
-                          placeholder="e.g. Master of Computer Applications (MCA)"
-                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
-                        />
-                      </div>
-                    ) : (
-                      <div className="relative">
-                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-                        <select
-                          value={selectedProgObj ? selectedProgObj.name : programme}
-                          onChange={(e) => {
-                            if (e.target.value === '__custom__') {
-                              setIsCustomProgramme(true);
-                              setProgramme('');
-                            } else {
-                              setProgramme(e.target.value);
-                            }
-                          }}
-                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900 font-medium cursor-pointer"
-                        >
-                          {loadingPrograms ? (
-                            <option value="">Loading created programmes...</option>
-                          ) : programsList.length === 0 ? (
-                            <option value="MCA (Master of Computer Applications)">MCA (Master of Computer Applications) - 010</option>
-                          ) : (
-                            programsList.map((prog) => (
-                              <option key={prog.id} value={prog.name}>
-                                {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
-                              </option>
-                            ))
-                          )}
-                          <option value="__custom__">✏️ + Enter Custom Programme Name</option>
-                        </select>
-                      </div>
-                    )}
-
-                    {selectedProgObj && !isCustomProgramme && (
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
-                        <span className="font-bold">Code: {selectedProgObj.code}</span>
-                        <span className="text-slate-300">•</span>
-                        <span>Medium: {selectedProgObj.medium || 'English'}</span>
-                        {selectedProgObj.eligibility && (
-                          <>
-                            <span className="text-slate-300">•</span>
-                            <span className="truncate max-w-[200px]" title={selectedProgObj.eligibility}>
-                              {selectedProgObj.eligibility}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    )}
+                    <span className="font-bold">Programme & Paper Allocation Note:</span>
+                    <p className="text-slate-600 text-[11px] mt-0.5 leading-relaxed">
+                      Staff accounts do not select a programme during account creation. Teaching programmes, subjects, and papers are officially assigned by the <strong>Programme Coordinator</strong> in the Faculty Allocation dashboard.
+                    </p>
                   </div>
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Subject</label>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Qualification / Degree</label>
+                    <input
+                      type="text"
+                      value={qualification}
+                      onChange={(e) => setQualification(e.target.value)}
+                      placeholder="e.g. M.Tech, Ph.D. in CS, MCA"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Specialization / Department</label>
                     <div className="relative">
                       <BookOpen className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                       <input
                         type="text"
                         value={subject}
                         onChange={(e) => setSubject(e.target.value)}
-                        placeholder="e.g. Software Architecture"
+                        placeholder="e.g. Computer Science, AI, Systems"
                         className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
                       />
                     </div>
                   </div>
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile</label>
-                    <div className="relative">
-                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        value={mobile}
-                        onChange={(e) => setMobile(e.target.value)}
-                        placeholder="+91 9876543210"
-                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
-                      />
-                    </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile / Contact Number</label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      placeholder="+91 9876543210"
+                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white transition-all text-slate-900"
+                    />
                   </div>
                 </div>
               </>

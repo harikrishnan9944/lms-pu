@@ -231,11 +231,21 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
   const [selectedAssessmentForSubmissions, setSelectedAssessmentForSubmissions] = useState<AssessmentItem | null>(null);
 
   // Modals & Forms State
-  const [assignModal, setAssignModal] = useState<{ open: boolean; paper?: PaperItem; facultyId: string; academicYear?: string; calendarYear?: string }>({
+  const [assignModal, setAssignModal] = useState<{
+    open: boolean;
+    paper?: PaperItem;
+    facultyId: string;
+    academicYear?: string;
+    calendarYear?: string;
+    selectedProgramId?: string;
+    selectedSemester?: string;
+  }>({
     open: false,
     facultyId: '',
     academicYear: '2024-2025',
     calendarYear: '2025 CY',
+    selectedProgramId: 'ALL',
+    selectedSemester: 'ALL',
   });
 
   const [paperModal, setPaperModal] = useState<{
@@ -461,8 +471,10 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
     loadData();
   }, []);
 
-  // Filter valid Faculty users ONLY
-  const facultyUsers = allUsers.filter((u) => u.role === 'FACULTY' && u.status === 'ACTIVE');
+  // Filter valid Teaching Staff (Faculty, Coordinators, Mentors)
+  const facultyUsers = allUsers.filter(
+    (u) => (u.role === 'FACULTY' || u.role === 'PROGRAM_COORDINATOR' || u.role === 'MENTOR') && u.status !== 'INACTIVE'
+  );
   const studentUsers = allUsers.filter((u) => u.role === 'STUDENT' && u.status === 'ACTIVE');
 
   // Load Detailed Syllabus for a selected Paper
@@ -1201,7 +1213,17 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
                     </button>
 
                     <button
-                      onClick={() => setAssignModal({ open: true, paper, facultyId: paper.facultyId || (facultyUsers[0]?.id || '') })}
+                      onClick={() =>
+                        setAssignModal({
+                          open: true,
+                          paper,
+                          facultyId: paper.facultyId || (facultyUsers[0]?.id || ''),
+                          selectedProgramId: paper.programmeId,
+                          selectedSemester: paper.semesterName,
+                          academicYear: paper.academicYear || '2024-2025',
+                          calendarYear: paper.calendarYear || '2025 CY',
+                        })
+                      }
                       className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm"
                     >
                       <UserCheck className="w-4 h-4" />
@@ -1394,7 +1416,17 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
             </div>
 
             <button
-              onClick={() => setAssignModal({ open: true, paper: papers[0], facultyId: '' })}
+              onClick={() =>
+                setAssignModal({
+                  open: true,
+                  paper: undefined,
+                  facultyId: '',
+                  selectedProgramId: filterProgramId !== 'ALL' ? filterProgramId : 'ALL',
+                  selectedSemester: filterSemester !== 'ALL' ? filterSemester : 'ALL',
+                  academicYear: filterAcademicYear !== 'ALL' ? filterAcademicYear : '2024-2025',
+                  calendarYear: filterCalendarYear !== 'ALL' ? filterCalendarYear : '2025 CY',
+                })
+              }
               className="px-4 py-2 bg-emerald-600 text-white rounded-xl text-xs font-bold shadow hover:bg-emerald-700 transition-colors flex items-center gap-2"
             >
               <UserPlus className="w-4 h-4" />
@@ -1553,7 +1585,17 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
                         <td className="px-4 py-3.5 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <button
-                              onClick={() => setAssignModal({ open: true, paper, facultyId: paper.facultyId || assignment?.facultyId || '' })}
+                              onClick={() =>
+                                setAssignModal({
+                                  open: true,
+                                  paper,
+                                  facultyId: paper.facultyId || assignment?.facultyId || '',
+                                  selectedProgramId: paper.programmeId,
+                                  selectedSemester: paper.semesterName,
+                                  academicYear: paper.academicYear || assignment?.academicYear || '2024-2025',
+                                  calendarYear: paper.calendarYear || assignment?.calendarYear || '2025 CY',
+                                })
+                              }
                               className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[11px] font-bold rounded-lg border border-indigo-200 transition-colors flex items-center gap-1"
                             >
                               <UserCheck className="w-3.5 h-3.5" />
@@ -3357,16 +3399,98 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
       {/* FACULTY ASSIGNMENT MODAL */}
       {assignModal.open && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
-            <button onClick={() => setAssignModal({ open: false, facultyId: '', academicYear: '2024-2025', calendarYear: '2025 CY' })} className="absolute top-4 right-4 text-slate-400"><X className="w-5 h-5" /></button>
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+            <button
+              onClick={() =>
+                setAssignModal({
+                  open: false,
+                  facultyId: '',
+                  academicYear: '2024-2025',
+                  calendarYear: '2025 CY',
+                  selectedProgramId: 'ALL',
+                  selectedSemester: 'ALL',
+                })
+              }
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600"
+            >
+              <X className="w-5 h-5" />
+            </button>
             <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
               <UserCheck className="w-5 h-5 text-emerald-600" />
-              <span>Assign Faculty to Paper</span>
+              <span>Assign Faculty to Program & Paper</span>
             </h3>
 
+            <div className="p-3 bg-emerald-50/80 border border-emerald-100 rounded-xl text-xs text-emerald-900">
+              <span className="font-bold">Faculty Teaching Allocation:</span>
+              <p className="text-slate-600 text-[11px] mt-0.5 leading-relaxed">
+                As Programme Coordinator, select the <strong>Programme</strong>, <strong>Semester</strong>, and <strong>Subject / Paper</strong> to allocate to a faculty member.
+              </p>
+            </div>
+
             <form onSubmit={handleAssignFacultySubmit} className="space-y-4 text-sm">
+              {/* Step 1: Select Programme and Semester */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">1. Programme</label>
+                  <select
+                    value={assignModal.selectedProgramId || 'ALL'}
+                    onChange={(e) => {
+                      const progId = e.target.value;
+                      const candidatePapers = papers.filter(
+                        (p) =>
+                          (progId === 'ALL' || p.programmeId === progId) &&
+                          (!assignModal.selectedSemester || assignModal.selectedSemester === 'ALL' || p.semesterName === assignModal.selectedSemester)
+                      );
+                      setAssignModal((prev) => ({
+                        ...prev,
+                        selectedProgramId: progId,
+                        paper: candidatePapers.length > 0 ? candidatePapers[0] : undefined,
+                      }));
+                    }}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white font-medium"
+                  >
+                    <option value="ALL">All Programmes</option>
+                    {programs.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name} ({p.code})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">2. Semester</label>
+                  <select
+                    value={assignModal.selectedSemester || 'ALL'}
+                    onChange={(e) => {
+                      const sem = e.target.value;
+                      const candidatePapers = papers.filter(
+                        (p) =>
+                          (!assignModal.selectedProgramId || assignModal.selectedProgramId === 'ALL' || p.programmeId === assignModal.selectedProgramId) &&
+                          (sem === 'ALL' || p.semesterName === sem)
+                      );
+                      setAssignModal((prev) => ({
+                        ...prev,
+                        selectedSemester: sem,
+                        paper: candidatePapers.length > 0 ? candidatePapers[0] : undefined,
+                      }));
+                    }}
+                    className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white font-medium"
+                  >
+                    <option value="ALL">All Semesters</option>
+                    <option value="Semester 1">Semester 1</option>
+                    <option value="Semester 2">Semester 2</option>
+                    <option value="Semester 3">Semester 3</option>
+                    <option value="Semester 4">Semester 4</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Step 2: Select Subject / Paper */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Paper *</label>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  3. Select Subject / Paper <span className="text-rose-500">*</span>
+                </label>
                 <select
                   value={assignModal.paper?.id || ''}
                   onChange={(e) => {
@@ -3382,15 +3506,59 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
                   className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white font-medium"
                   required
                 >
-                  <option value="">Choose Paper...</option>
-                  {papers.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.programmeName} | {p.code} - {p.name} ({p.semesterName})
+                  <option value="">Choose Subject / Paper...</option>
+                  {papers
+                    .filter((p) => {
+                      const progMatch =
+                        !assignModal.selectedProgramId ||
+                        assignModal.selectedProgramId === 'ALL' ||
+                        p.programmeId === assignModal.selectedProgramId;
+                      const semMatch =
+                        !assignModal.selectedSemester ||
+                        assignModal.selectedSemester === 'ALL' ||
+                        p.semesterName === assignModal.selectedSemester;
+                      return progMatch && semMatch;
+                    })
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        [{p.code}] {p.name} — {p.programmeName} ({p.semesterName})
+                      </option>
+                    ))}
+                </select>
+                {assignModal.paper && (
+                  <p className="text-[11px] text-emerald-700 mt-1.5 font-medium bg-emerald-50 px-2.5 py-1.5 rounded-lg border border-emerald-100 flex items-center justify-between">
+                    <span>
+                      Selected Paper: <strong>[{assignModal.paper.code}] {assignModal.paper.name}</strong>
+                    </span>
+                    <span className="text-slate-500 text-[10px]">{assignModal.paper.semesterName}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Step 3: Select Faculty */}
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  4. Select Faculty / Academic Staff Member <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={assignModal.facultyId}
+                  onChange={(e) => setAssignModal({ ...assignModal, facultyId: e.target.value })}
+                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white font-medium"
+                  required
+                >
+                  <option value="">Choose Faculty / Academic Staff...</option>
+                  {facultyUsers.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({f.role}) — {f.email} {f.qualification ? `[${f.qualification}]` : ''}
                     </option>
                   ))}
                 </select>
+                <p className="text-[11px] text-slate-400 mt-1">
+                  Assigns this faculty member as teacher & coordinator for this paper and synchronizes their LMS teaching dashboard.
+                </p>
               </div>
 
+              {/* Step 4: Academic Year & Calendar Year */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Academic Year</label>
@@ -3422,24 +3590,12 @@ export function ProgramCoordinatorDashboard({ user }: ProgramCoordinatorDashboar
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Select Faculty Member *</label>
-                <select
-                  value={assignModal.facultyId}
-                  onChange={(e) => setAssignModal({ ...assignModal, facultyId: e.target.value })}
-                  className="w-full px-3 py-2.5 border border-slate-200 rounded-xl text-xs bg-white font-medium"
-                  required
-                >
-                  <option value="">Choose Faculty User...</option>
-                  {facultyUsers.map((f) => (
-                    <option key={f.id} value={f.id}>{f.name} ({f.email})</option>
-                  ))}
-                </select>
-                <p className="text-[11px] text-slate-400 mt-1">Faculty list dynamically retrieved from users database.</p>
-              </div>
-
-              <button type="submit" className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow transition-colors">
-                Save Faculty Assignment
+              <button
+                type="submit"
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow transition-colors flex items-center justify-center gap-2"
+              >
+                <UserCheck className="w-4 h-4" />
+                <span>Save Faculty Assignment</span>
               </button>
             </form>
           </div>

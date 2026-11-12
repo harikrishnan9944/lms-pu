@@ -3928,8 +3928,8 @@ export async function assignFacultyToPaper(data: {
   await ensureDefaultDataSeeded();
 
   const faculty = await prisma.user.findUnique({ where: { id: data.facultyId } });
-  if (!faculty || faculty.role !== 'FACULTY') {
-    throw new Error('Only valid faculty users can be assigned to papers.');
+  if (!faculty || (faculty.role !== 'FACULTY' && faculty.role !== 'PROGRAM_COORDINATOR' && faculty.role !== 'MENTOR')) {
+    throw new Error('Only valid academic staff (Faculty/Coordinator/Mentor) can be assigned to papers.');
   }
 
   const paper = await prisma.paper.findUnique({ where: { id: data.paperId } });
@@ -3941,6 +3941,15 @@ export async function assignFacultyToPaper(data: {
 
   const finalAcadYear = data.academicYear || paper.academicYear || program?.academicYear || '2025-2026';
   const finalCalYear = data.calendarYear || paper.calendarYear || program?.calendarYear || '2026';
+
+  // Synchronize faculty member's profile with assigned program and paper subject
+  await prisma.user.update({
+    where: { id: faculty.id },
+    data: {
+      programme: paper.programmeName || program?.name || faculty.programme,
+      subject: `${paper.code} - ${paper.name}`,
+    },
+  }).catch(() => {});
 
   const existingForPaper = await prisma.facultyAssignment.findFirst({
     where: { paperId: paper.id },

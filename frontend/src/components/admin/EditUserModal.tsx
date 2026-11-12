@@ -5,7 +5,7 @@ import { updateUserAction } from '@/app/actions/userActions';
 import { fetchProgramsAction } from '@/app/actions/lmsActions';
 import { ProgramItem } from '@/lib/db';
 import { UserRole, UserStatus } from '@/lib/auth';
-import { X, Edit3, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw } from 'lucide-react';
+import { X, Edit3, Mail, User, ShieldCheck, Phone, GraduationCap, BookOpen, Hash, Camera, Upload, Trash2, RefreshCw, Info } from 'lucide-react';
 import { Toast } from '../ui/Toast';
 
 export interface EditUserModalProps {
@@ -172,13 +172,13 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated, programs }
         username,
         role,
         status,
-        qualification,
-        programme,
-        subject,
+        qualification: role !== 'STUDENT' ? qualification : undefined,
+        programme: role === 'STUDENT' ? programme : user.programme,
+        subject: role !== 'STUDENT' ? subject : undefined,
         mobile,
-        studentId,
-        semester,
-        address,
+        studentId: role === 'STUDENT' ? studentId : undefined,
+        semester: role === 'STUDENT' ? semester : undefined,
+        address: role === 'STUDENT' ? address : undefined,
         imageUrl: imageUrl || '',
       });
 
@@ -371,138 +371,74 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated, programs }
           <div className="border-t border-slate-100 pt-4 space-y-4">
             <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider">Extended Information</h4>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile</label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <input
-                    type="text"
-                    value={mobile}
-                    onChange={(e) => setMobile(e.target.value)}
-                    className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-semibold text-slate-700">
-                    Assigned Programme <span className="text-rose-500">*</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomProgramme(!isCustomProgramme)}
-                    className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
-                  >
-                    {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
-                  </button>
-                </div>
-
-                {isCustomProgramme ? (
-                  <div className="relative">
-                    <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                    <input
-                      type="text"
-                      value={programme}
-                      onChange={(e) => setProgramme(e.target.value)}
-                      placeholder="e.g. Master of Computer Applications (MCA)"
-                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                    />
-                  </div>
-                ) : (
-                  <div className="relative">
-                    <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
-                    <select
-                      value={selectedProgObj ? selectedProgObj.name : programme}
-                      onChange={(e) => {
-                        if (e.target.value === '__custom__') {
-                          setIsCustomProgramme(true);
-                        } else {
-                          setProgramme(e.target.value);
-                        }
-                      }}
-                      className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900 font-medium cursor-pointer"
-                    >
-                      {loadingPrograms ? (
-                        <option value="">Loading created programmes...</option>
-                      ) : (
-                        <>
-                          {/* If current assigned program doesn't strictly equal any program in list, preserve as option */}
-                          {programme && !programsList.some((p) => p.name === programme || p.code === programme) && (
-                            <option value={programme}>{programme} (Current)</option>
-                          )}
-                          {programsList.map((prog) => (
-                            <option key={prog.id} value={prog.name}>
-                              {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
-                            </option>
-                          ))}
-                          <option value="__custom__">✏️ + Enter Custom Programme Name</option>
-                        </>
-                      )}
-                    </select>
-                  </div>
-                )}
-
-                {selectedProgObj && !isCustomProgramme && (
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
-                    <span className="font-bold">Code: {selectedProgObj.code}</span>
-                    <span className="text-slate-300">•</span>
-                    <span>Medium: {selectedProgObj.medium || 'English'}</span>
-                    {selectedProgObj.eligibility && (
-                      <>
-                        <span className="text-slate-300">•</span>
-                        <span className="truncate max-w-[200px]" title={selectedProgObj.eligibility}>
-                          {selectedProgObj.eligibility}
-                        </span>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {(role === 'PROGRAM_COORDINATOR' || role === 'FACULTY' || role === 'MENTOR') && (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Qualification</label>
-                  <input
-                    type="text"
-                    value={qualification}
-                    onChange={(e) => setQualification(e.target.value)}
-                    className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1">Subject</label>
-                  <div className="relative">
-                    <BookOpen className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                    <input
-                      type="text"
-                      value={subject}
-                      onChange={(e) => setSubject(e.target.value)}
-                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
             {role === 'STUDENT' && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 mb-1">Student ID / Register No.</label>
-                    <div className="relative">
-                      <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                      <input
-                        type="text"
-                        value={studentId}
-                        onChange={(e) => setStudentId(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
-                      />
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="block text-xs font-semibold text-slate-700">
+                        Assigned Programme <span className="text-rose-500">*</span>
+                      </label>
+                      <button
+                        type="button"
+                        onClick={() => setIsCustomProgramme(!isCustomProgramme)}
+                        className="text-[10px] text-sky-600 hover:text-sky-800 font-semibold underline underline-offset-2"
+                      >
+                        {isCustomProgramme ? 'Select from Created' : '+ Type Custom'}
+                      </button>
                     </div>
+
+                    {isCustomProgramme ? (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                        <input
+                          type="text"
+                          value={programme}
+                          onChange={(e) => setProgramme(e.target.value)}
+                          placeholder="e.g. Master of Computer Applications (MCA)"
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                        />
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3 pointer-events-none" />
+                        <select
+                          value={selectedProgObj ? selectedProgObj.name : programme}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setIsCustomProgramme(true);
+                            } else {
+                              setProgramme(e.target.value);
+                            }
+                          }}
+                          className="w-full pl-9 pr-8 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900 font-medium cursor-pointer"
+                        >
+                          {loadingPrograms ? (
+                            <option value="">Loading created programmes...</option>
+                          ) : (
+                            <>
+                              {programme && !programsList.some((p) => p.name === programme || p.code === programme) && (
+                                <option value={programme}>{programme} (Current)</option>
+                              )}
+                              {programsList.map((prog) => (
+                                <option key={prog.id} value={prog.name}>
+                                  {prog.name} ({prog.code}) {prog.medium ? `— ${prog.medium}` : ''}
+                                </option>
+                              ))}
+                              <option value="__custom__">✏️ + Enter Custom Programme Name</option>
+                            </>
+                          )}
+                        </select>
+                      </div>
+                    )}
+
+                    {selectedProgObj && !isCustomProgramme && (
+                      <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-sky-800 bg-sky-50/80 px-2.5 py-1 rounded-lg border border-sky-200/60 font-medium">
+                        <span className="font-bold">Code: {selectedProgObj.code}</span>
+                        <span className="text-slate-300">•</span>
+                        <span>Medium: {selectedProgObj.medium || 'English'}</span>
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -520,6 +456,34 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated, programs }
                   </div>
                 </div>
 
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Student ID / Register No.</label>
+                    <div className="relative">
+                      <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        value={studentId}
+                        onChange={(e) => setStudentId(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile</label>
+                    <div className="relative">
+                      <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        value={mobile}
+                        onChange={(e) => setMobile(e.target.value)}
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-semibold text-slate-700 mb-1">Address</label>
                   <input
@@ -528,6 +492,69 @@ export function EditUserModal({ isOpen, user, onClose, onUserUpdated, programs }
                     onChange={(e) => setAddress(e.target.value)}
                     className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
                   />
+                </div>
+              </>
+            )}
+
+            {role !== 'STUDENT' && (
+              <>
+                <div className="p-3 bg-sky-50/80 border border-sky-100 rounded-xl text-xs text-sky-900 flex items-start gap-2.5">
+                  <Info className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+                  <div>
+                    <span className="font-bold">Faculty Teaching Allocation:</span>
+                    <p className="text-slate-600 text-[11px] mt-0.5 leading-relaxed">
+                      {user.programme ? (
+                        <>
+                          Currently assigned to: <strong className="text-sky-700">{user.programme}</strong>
+                          {user.subject ? ` — ${user.subject}` : ''}. Teaching allocations are managed by the <strong>Programme Coordinator</strong>.
+                        </>
+                      ) : (
+                        <>
+                          No programme assigned yet. Specific programmes, subjects, and papers are allocated to staff by the <strong>Programme Coordinator</strong>.
+                        </>
+                      )}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Qualification</label>
+                    <input
+                      type="text"
+                      value={qualification}
+                      onChange={(e) => setQualification(e.target.value)}
+                      placeholder="e.g. M.Tech, Ph.D. in CS"
+                      className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Specialization / Department</label>
+                    <div className="relative">
+                      <BookOpen className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      <input
+                        type="text"
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        placeholder="e.g. Computer Science & AI"
+                        className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Mobile</label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                    <input
+                      type="text"
+                      value={mobile}
+                      onChange={(e) => setMobile(e.target.value)}
+                      className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 text-slate-900"
+                    />
+                  </div>
                 </div>
               </>
             )}
